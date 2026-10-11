@@ -39,8 +39,8 @@ class AudioService:
         self.version+=1;self.pending=(self.version,voice_from(asdict(voice)))
     def start(self,input_name,output_name,voice):
         if self.active:return
-        if any(word in input_name.lower() for word in ('streaming microphone','cable output','voicemeeter','virtual')):raise ValueError('Choose your physical microphone as input to prevent a feedback loop.')
-        if not any(word in output_name.lower() for word in ('streaming microphone','cable','voicemeeter','virtual')):raise ValueError('Choose a virtual playback endpoint as output. Preview listening uses a separate device.')
+        if any(word in input_name.lower() for word in ('streaming microphone','cable output','voicemeeter','virtual','clear mic')):raise ValueError('Choose your physical microphone as input to prevent a feedback loop.')
+        if not any(word in output_name.lower() for word in ('streaming microphone','cable','voicemeeter','virtual','clear mic feed')):raise ValueError('Choose a virtual playback endpoint as output. Preview listening uses a separate device.')
         self.configure(voice);self.stop_event.clear();self.stats={'status':'starting'}
         self.thread=threading.Thread(target=self._run,args=(input_name,output_name),daemon=True);self.thread.start()
     def stop(self):

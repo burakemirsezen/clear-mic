@@ -2,18 +2,22 @@
 
 A local Windows voice microphone app. Clear Mic runs RNNoise on the CPU, then gives speech consistent volume with gentle compression and a peak limiter. No account, subscription, cloud inference, or GPU is required.
 
-Version 1.1 brings an Electron interface with a compact sidebar, a routing dashboard, preset cards, modern switches, and grouped voice controls. The native audio chain runs in a separate local process. The interface uses software rendering and pauses meter updates when hidden in the tray.
+Version 1.2 can create a dedicated Windows virtual microphone from inside the app. The Electron interface and native audio process run locally. The interface uses software rendering and pauses meter updates when hidden in the tray.
 
 ## Download and use
 
 Download the Windows ZIP from this repository's **Releases**, extract the entire folder, and run **ClearMic.exe**. Python and build tools are not required for the release.
 
-1. Choose your physical microphone.
-2. Choose an **existing virtual playback endpoint** as the output.
+1. Press **Create microphone**, then approve the Windows administrator prompt.
+2. Choose your physical microphone. Clear Mic selects its new playback feed automatically.
 3. Press **Turn on microphone**.
 4. In Steam, a game, or your calling app, select the paired virtual **recording** endpoint as its microphone.
 
-For example, `Speakers (Steam Streaming Microphone)` may pair with `Microphone (Steam Streaming Microphone)`. With a virtual cable, its playback side often contains `CABLE Input`, and the receiving app selects `CABLE Output`. Availability depends on installed drivers. Clear Mic processes and routes audio; it **does not install a virtual audio driver** or change your Windows default devices.
+In your game, select **CABLE Output (Clear Mic (VB-Audio Virtual Cable))**. The app sends processed audio to **Speakers (Clear Mic (VB-Audio Virtual Cable))**. These are two ends of the newly created device. Setup restores the existing Windows playback and recording defaults if Windows selects the newly created cable; it reports a warning if restoration is unavailable. A restart may be required by Windows; Clear Mic never restarts the PC automatically.
+
+The microphone uses the unmodified, Microsoft-signed **VB-CABLE driver by VB-Audio**, bundled under the vendor's [distribution terms](https://vb-audio.com/Services/licensing.htm). VB-CABLE is proprietary donationware: it needs no subscription or cloud service, and [donations to its developer](https://vb-audio.com/Cable/) are welcome. The application source and RNNoise are open source; the bundled driver is not.
+
+If ordinary VB-CABLE is already installed, Clear Mic preserves it and declines to create a second instance of that same driver. Select the existing cable instead. Existing Steam or other virtual endpoints remain available as alternatives. Setup checks pinned driver checksums and creates only `ROOT\CLEARMIC\0000`; removal targets only that owned device and keeps shared driver packages intact. Settings contains **Remove microphone** and the vendor's buffer control panel.
 
 The app starts stopped. Settings and device names are remembered. Close-to-tray keeps audio running; choose **Quit** from the tray or Settings to stop and exit. Automatic microphone start and Windows sign-in launch are optional settings, both off by default. Keep the extracted app folder in a stable location before enabling sign-in launch.
 
@@ -43,6 +47,8 @@ On the Voice page, **Record 5 seconds** captures only after pressing the button.
 
 All processing is native CPU code using AVX2. RNNoise processes 480-sample / 10 ms frames. The peak limiter adds exactly 96 samples / 2 ms of lookahead. RNNoise's own framing and Windows/virtual-driver buffering add further delay. Actual end-to-end delay depends on the devices and receiving application; filter-call processing time is not the full microphone latency.
 
+Setup saves a conservative 3072-sample current VB-CABLE buffer when its control interface is available. Otherwise it reports that the microphone is created with the driver's current defaults. That number is a driver setting, not a measurement of total latency. On the development PC, shared-WASAPI synthetic loopback measured approximately **110–145 ms** across runs, including Windows stream buffering. A live FIFINE → RNNoise → virtual device check ran without audio warnings, with about **0.5 ms** average processing per frame. These measurements do not include a receiving game's buffering or network delay. Use **Driver controls** in Settings if an application needs a larger buffer; consult the bundled vendor manual before reducing it.
+
 Meters report input and output levels, compressor/limiter gain reduction, processing time, audio warnings, and input clipping. Saved device names are resolved against the current WASAPI inventory rather than assuming permanent device numbers. Windows COM is initialized on audio background threads. No exclusive-mode capture is used.
 
 This Windows build requires Windows 10/11 x64 and an AVX2-capable CPU. An unsupported CPU is detected before inference starts. The downloadable executable is unsigned.
@@ -56,6 +62,8 @@ python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements-build.txt
 .venv\Scripts\python.exe scripts\fetch_rnnoise.py
 scripts\build_native.cmd
+.venv\Scripts\python.exe scripts\fetch_vbcable.py
+scripts\build_device_setup.cmd
 .venv\Scripts\python.exe -m unittest discover -s tests -v
 npm ci --prefix desktop
 npm start --prefix desktop
@@ -67,7 +75,7 @@ Create the portable Windows ZIP:
 .venv\Scripts\python.exe scripts\package.py
 ```
 
-Source and model downloads come from official Xiph sources and are pinned by commit and SHA-256 in `rnnoise.lock.json`. Builds use local MSVC. There are no proprietary Discord/Krisp libraries in this project.
+RNNoise source/model downloads come from official Xiph sources, pinned in `rnnoise.lock.json`. The complete original VB-CABLE package is pinned in `vbcable.lock.json` and retained unchanged; it is downloaded during the build and is not committed to Git. Builds use local MSVC. There are no Discord/Krisp libraries in this project.
 
 For a synthetic processing check without microphone capture:
 
@@ -81,6 +89,6 @@ Results are written to the app data folder's `self-test.json`. Tests cover high-
 
 ## Licensing
 
-Application source: MIT. RNNoise and its model source use the upstream BSD-style notices retained in `THIRD_PARTY/RNNoise-COPYING`. Electron/Chromium, Python, NumPy, sounddevice/PortAudio, soundfile/libsndfile, and Pillow retain their own licenses. Distribution notices are included with the app.
+Application source: MIT. RNNoise and its model source use the upstream BSD-style notices retained in `THIRD_PARTY/RNNoise-COPYING`. VB-CABLE has separate proprietary donationware terms, documented in `THIRD_PARTY/VB-CABLE-NOTICE.md`, the unchanged vendor package, and the vendor's current licensing page. Electron/Chromium, Python, NumPy, sounddevice/PortAudio, soundfile/libsndfile, and Pillow retain their own licenses. Distribution notices are included with the app.
 
 Built around [Xiph RNNoise](https://github.com/xiph/rnnoise) and [python-sounddevice](https://python-sounddevice.readthedocs.io/).

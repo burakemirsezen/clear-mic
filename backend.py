@@ -16,14 +16,18 @@ class Backend:
         try:voice=voice_from(stored.get('voice',{}))
         except (ValueError,TypeError,AttributeError):voice=Voice()
         self.settings={'input':stored.get('input',''),'output':stored.get('output',''),'listen':stored.get('listen',''),'voice':asdict(voice),'preset':stored.get('preset','Natural speech'),'auto_start':bool(stored.get('auto_start',False)),'minimize_to_tray':bool(stored.get('minimize_to_tray',True))}
+        self.settings['created_device_selected']=bool(stored.get('created_device_selected',False))
         self.inventory={};self.refresh()
     def emit(self,value):
         print(json.dumps(value,allow_nan=False),flush=True)
-    def refresh(self):
+    def refresh(self,prefer_created=False):
         if self.service.active or self.busy:raise ValueError('Stop the microphone before refreshing devices.')
         sd.stop();sd._terminate();sd._initialize();self.inventory=devices()
         inputs=[n for n,i in self.inventory['input']];outputs=[n for n,i in self.inventory['output']]
-        if self.settings['input'] not in inputs:self.settings['input']=next((n for n in inputs if not any(w in n.lower() for w in ('virtual','cable','streaming'))),inputs[0] if inputs else '')
+        if self.settings['input'] not in inputs:self.settings['input']=next((n for n in inputs if not any(w in n.lower() for w in ('virtual','cable','streaming','clear mic'))),inputs[0] if inputs else '')
+        own_output=next((n for n in outputs if 'Clear Mic (VB-Audio Virtual Cable)' in n and '16 Ch' not in n),None)
+        if own_output and (prefer_created or not self.settings['created_device_selected']):
+            self.settings['output']=own_output;self.settings['created_device_selected']=True
         if self.settings['output'] not in outputs:self.settings['output']=next((n for n in outputs if 'Steam Streaming Microphone' in n),next((n for n in outputs if any(w in n.lower() for w in ('cable','voicemeeter','virtual'))),''))
         if self.settings['listen'] not in outputs:
             default=next((a['default_output_device'] for a in sd.query_hostapis() if a['name']=='Windows WASAPI'),-1)
@@ -67,7 +71,7 @@ class Backend:
             return True
         action=message.get('action');value=message.get('value')
         if action=='snapshot':result=self.snapshot()
-        elif action=='refresh':result=self.refresh()
+        elif action=='refresh':result=self.refresh(isinstance(value,dict) and bool(value.get('prefer_created')))
         elif action=='configure':result=self.configure(value)
         elif action=='start':self.start();result=True
         elif action=='stop':self.service.stop();result=True

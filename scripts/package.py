@@ -3,6 +3,9 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from clear_mic import __version__
+subprocess.run([sys.executable,str(ROOT/'scripts'/'fetch_vbcable.py')],check=True,cwd=ROOT)
+subprocess.run([sys.executable,str(ROOT/'scripts'/'verify_driver.py')],check=True,cwd=ROOT)
+subprocess.run([str(ROOT/'scripts'/'build_device_setup.cmd')],check=True,cwd=ROOT)
 subprocess.run([sys.executable,str(ROOT/'scripts'/'make_icon.py')],check=True,cwd=ROOT)
 subprocess.run([sys.executable,str(ROOT/'scripts'/'collect_licenses.py')],check=True,cwd=ROOT)
 subprocess.run([sys.executable,'-m','PyInstaller','--noconfirm','--onedir','--console','--name','ClearMicAudio','--add-binary',str(ROOT/'vendor'/'clearmic_native.dll')+';vendor','--add-data',str(ROOT/'THIRD_PARTY')+';THIRD_PARTY','--collect-all','sounddevice','--collect-all','_sounddevice_data','--collect-all','soundfile','--collect-all','_soundfile_data',str(ROOT/'backend.py')],check=True,cwd=ROOT)

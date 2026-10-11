@@ -1,0 +1,11 @@
+{
+  "url": "https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack45.zip",
+  "package_sha256": "b950e39f01af1d04ea623c8f6d8eb9b6ea5c477c637295fabf20631c85116bfb",
+  "files": {
+    "vbMmeCable64_win10.inf": "61c857be74831cc299d9be62f8d49d137f14063454fc54f859d5bc9b4b813daf",
+    "vbaudio_cable64_win10.sys": "f01344602472f1b527de5ee98f18987c03db48fea444e457d061e937f1d531d5",
+    "vbaudio_cable64_win10.cat": "0a921ebadbe39cf3fa7c14ff37d1ca22565a9651244bd3ac177dc810bc99072e"
+  },
+  "kernel_signer": "Microsoft Windows Hardware Compatibility Publisher",
+  "license_url": "https://vb-audio.com/Services/licensing.htm"
+}

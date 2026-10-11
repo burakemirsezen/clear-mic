@@ -26,6 +26,41 @@ $('dismiss-error').onclick=()=>{$('error').hidden=true;};
 for(const action of ['minimize','close','quit'])$(action).onclick=()=>{appAction(action).catch(()=>{});};
 $('data-folder').onclick=()=>{appAction('folder').catch(()=>{});};
 $('source-link').onclick=()=>{appAction('source').catch(()=>{});};
+$('driver-info').onclick=()=>{appAction('driver-info').catch(()=>{});};
+$('driver-license').onclick=()=>{appAction('driver-license').catch(()=>{});};
+$('driver-controls').onclick=()=>{appAction('driver-controls').catch(()=>{});};
+function updateDriver() {
+  const driver=state.driver||{}, endpoints=driver.endpoints||[];
+  const available=driver.installed&&endpoints.some(e=>e.flow==='input')&&endpoints.some(e=>e.flow==='output');
+  $('device-setup').hidden=Boolean(available);
+  $('driver-state').textContent=available?'Clear Mic (VB-Audio) is ready':driver.installed?'Device installed — waiting for Windows endpoints':'Virtual microphone not created yet';
+  $('create-device').disabled=Boolean(driver.foreign_vbcable||state.settingUp);
+  $('remove-device').disabled=Boolean(!driver.installed||state.settingUp);
+  $('driver-controls').disabled=Boolean(!driver.installed||!driver.buffer_samples||state.settingUp);
+  $('check-driver').disabled=Boolean(state.settingUp);
+  $('driver-detail').textContent=driver.buffer_samples?`Driver buffer: ${driver.buffer_samples} samples. Total delay also includes Windows and your receiving app.`:available?'Microphone ready. Restart Windows to enable the optional driver buffer controls.':'Powered by VB-Audio’s signed VB-CABLE driver.';
+  $('create-device').textContent=state.settingUp?'Creating device…':driver.installed?'Repair microphone':'Create microphone';
+  $('device-setup-title').textContent=driver.foreign_vbcable?'VB-CABLE is already installed':'Create your virtual microphone';
+  $('device-setup-description').textContent=driver.foreign_vbcable?'Clear Mic will leave that existing cable untouched. You can still select it as an output.':driver.installed?'Windows may need a restart before the microphone becomes available.':'Clear Mic can create a dedicated microphone for your games and calls.';
+  pairedName();
+}
+$('check-driver').onclick=async()=>{try{state.driver=await appAction('device-status');updateDriver();}catch{}};
+$('create-device').onclick=async()=>{
+  if(state.settingUp)return;
+  state.settingUp=true;updateDriver();updateStatus();footer('Windows will request administrator permission to create the microphone.');
+  try {
+    await saveSettings();const result=await appAction('create-device');state.driver=result.driver;state.settings=result.snapshot.settings;state.devices=result.snapshot.devices;renderSettings();updateDriver();
+    footer(result.driver.warning||(result.driver.endpoints.length>=2?'Your Clear Mic microphone is ready. Select it in your game or calling app.':'Driver installed. Restart Windows to finish creating the microphone.'));
+  } catch {} finally { state.settingUp=false;updateDriver();updateStatus(); }
+};
+$('remove-device').onclick=async()=>{
+  if(state.settingUp)return;
+  state.settingUp=true;updateDriver();updateStatus();
+  try {
+    const result=await appAction('remove-device');
+    if(!result.cancelled){state.driver=result.driver;state.settings=result.snapshot.settings;state.devices=result.snapshot.devices;renderSettings();footer('Virtual microphone removed. You can create it again at any time.');}
+  } catch {} finally {state.settingUp=false;updateDriver();updateStatus();}
+};
 function saveSettings() {
   clearTimeout(saveTimer);saveTimer=null;
   if(!state.ready)return saveChain;
@@ -81,7 +116,8 @@ function fillSelect(id,values,selected) {
 function pairedName() {
   const output=state.settings.output||'';
   let name='The paired virtual microphone';
-  if(output.includes('Steam Streaming Microphone'))name=state.devices.input.find(n=>n.includes('Steam Streaming Microphone'))||'Microphone (Steam Streaming Microphone)';
+  if(output.includes('Clear Mic (VB-Audio Virtual Cable)'))name=state.driver?.endpoints?.find(e=>e.flow==='input')?.name||'CABLE Output (Clear Mic (VB-Audio Virtual Cable))';
+  else if(output.includes('Steam Streaming Microphone'))name=state.devices.input.find(n=>n.includes('Steam Streaming Microphone'))||'Microphone (Steam Streaming Microphone)';
   else if(/cable input/i.test(output))name=state.devices.input.find(n=>/cable output/i.test(n))||'CABLE Output';
   else if(/voicemeeter/i.test(output))name='The matching VoiceMeeter recording output';
   $('paired-device').textContent=name;
@@ -110,10 +146,12 @@ function updateStatus() {
   $('hero-title').textContent=on?'Your clean mic is live.':stats.status==='starting'?'Getting your mic ready…':'Ready when you are.';
   $('hero-description').textContent=on?'Your voice is being sent to the virtual microphone.':'Clean up background noise and keep your voice natural.';
   $('toggle-mic').classList.toggle('on',active);$('toggle-mic').querySelector('span').textContent=active?'Turn off microphone':'Turn on microphone';
-  $('toggle-mic').disabled=!state.ready||state.recording||commandBusy;
-  $('input-device').disabled=$('output-device').disabled=active||state.recording;
-  $('refresh').disabled=active||state.recording||!state.ready;
-  $('record-preview').disabled=active||state.recording||!state.ready;
+  $('toggle-mic').disabled=!state.ready||state.recording||commandBusy||state.settingUp;
+  $('input-device').disabled=$('output-device').disabled=active||state.recording||state.settingUp;
+  $('refresh').disabled=active||state.recording||!state.ready||state.settingUp;
+  $('record-preview').disabled=active||state.recording||!state.ready||state.settingUp;
+  $('create-device').disabled=Boolean(state.driver?.foreign_vbcable||state.settingUp||state.recording||commandBusy);
+  $('remove-device').disabled=Boolean(!state.driver?.installed||state.settingUp||state.recording||commandBusy);
   $('record-preview').querySelector('span:last-child').textContent=state.recording?`Recording… ${Math.ceil(state.remaining)}s`:'Record 5 seconds';
   $('play-original').disabled=$('play-processed').disabled=!state.previewReady||state.recording||active;
   $('record-progress').hidden=!state.recording;$('record-progress').querySelector('span').style.width=`${Math.max(0,Math.min(100,100-state.remaining*20))}%`;
@@ -136,7 +174,7 @@ window.clearMic.subscribe(message=>{
 });
 async function boot() {
   try {
-    const data=await appAction('boot');Object.assign(state,{settings:data.settings,devices:data.devices,presets:data.presets,previewReady:data.preview_ready,ready:true});
+    const data=await appAction('boot');Object.assign(state,{settings:data.settings,devices:data.devices,presets:data.presets,previewReady:data.preview_ready,ready:true,driver:data.virtual_device});
     $('version').textContent=data.version;$('launch-login').checked=data.launch_at_login;
     const descriptions={'Natural speech':'Gentle shaping. Your voice, just cleaner.','Even speech':'A steadier level for animated conversations.','Noise removal only':'Keep your mic character. Remove the noise.'};
     for(const name of Object.keys(state.presets)) {
@@ -145,7 +183,7 @@ async function boot() {
       const description=document.createElement('span');description.className='preset-description';description.textContent=descriptions[name];card.append(title,description,icon('check','preset-check'));
       card.onclick=()=>{state.settings.voice=structuredClone(state.presets[name]);state.settings.preset=name;renderSettings();saveSettings().catch(()=>{});};$('presets').append(card);
     }
-    renderSettings();updateStatus();footer('Your voice is processed on this device.');
+    renderSettings();updateDriver();updateStatus();footer('Your voice is processed on this device.');
   } catch(e){error('Could not connect to the audio service. Restart Clear Mic.');}
 }
 window.checkLayout=()=>{
@@ -162,7 +200,14 @@ window.runUiChecks=async()=>{
   const saved=await call('snapshot');const savedSlider=saved.settings.voice.output_db===-3;
   document.querySelector('[data-preset="Even speech"]').click();await saveChain;const presetSaved=(await call('snapshot')).settings.preset==='Even speech';
   state.settings=initial;renderSettings();await saveSettings();
+  const originalDriver=state.driver;
+  state.driver={installed:false,foreign_vbcable:false,endpoints:[]};updateDriver();updateStatus();
+  const setupVisible=!$('device-setup').hidden&&!$('create-device').disabled;
+  const setupPages=window.checkLayout();
+  state.driver={installed:false,foreign_vbcable:true,endpoints:[]};updateDriver();updateStatus();
+  const foreignProtected=$('create-device').disabled;
+  state.driver=originalDriver;updateDriver();updateStatus();
   const sizes=window.checkLayout();
-  return {pass:savedSlider&&presetSaved&&sizes.every(s=>s.noHorizontalOverflow&&s.contentVisible),savedSlider,presetSaved,pages:sizes,audioStatus:state.stats.status,previewRecorded:state.previewReady};
+  return {pass:savedSlider&&presetSaved&&setupVisible&&foreignProtected&&[...sizes,...setupPages].every(s=>s.noHorizontalOverflow&&s.contentVisible),savedSlider,presetSaved,setupVisible,foreignProtected,setupPages,pages:sizes,audioStatus:state.stats.status,previewRecorded:state.previewReady};
 };
 boot();

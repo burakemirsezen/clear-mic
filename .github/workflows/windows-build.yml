@@ -21,6 +21,10 @@ jobs:
       - run: python scripts/fetch_rnnoise.py
       - run: scripts\build_native.cmd
         shell: cmd
+      - run: python scripts/fetch_vbcable.py
+      - run: python scripts/verify_driver.py
+      - run: scripts\build_device_setup.cmd
+        shell: cmd
       - run: python -m unittest discover -s tests -v
       - run: python scripts/package.py
       - name: Verify packaged processing

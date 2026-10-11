@@ -1,8 +1,9 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, dialog } = require('electron');
 const { spawn } = require('node:child_process');
 const readline = require('node:readline');
 const path = require('node:path');
 const fs = require('node:fs');
+const { VirtualDevice } = require('./device.cjs');
 app.disableHardwareAcceleration();
 
 const testing = process.argv.includes('--ui-test');
@@ -11,6 +12,8 @@ const dataDir = process.env.CLEARMIC_DATA_DIR || path.join(process.env.LOCALAPPD
 fs.mkdirSync(path.join(dataDir, 'logs'), { recursive: true });
 function log(value) { fs.appendFileSync(path.join(dataDir, 'logs', 'desktop.log'), `${new Date().toISOString()} ${value}\n`); }
 let window, tray, child, settings = {}, serial = 0, quitting = false, lastState = 'stopped';
+const driverResources=app.isPackaged?process.resourcesPath:path.join(__dirname,'..','vendor');
+const virtualDevice = new VirtualDevice(driverResources,dataDir);
 const pending = new Map();
 let resolveReady, rejectReady;
 const ready = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
@@ -19,6 +22,7 @@ ready.catch(() => {});
 function show() { if (window) { window.show(); window.restore(); window.focus(); } }
 function publish(message) { if (window && !window.isDestroyed() && (message.event !== 'status' || window.isVisible())) window.webContents.send('audio:event', message); }
 function request(action, value) {
+  if (virtualDevice.busy && ['start','record','refresh'].includes(action)) return Promise.reject(new Error('Wait for virtual microphone setup to finish.'));
   return ready.then(() => new Promise((resolve, reject) => {
     if (!child || child.killed) return reject(new Error('The audio service is unavailable. Restart Clear Mic.'));
     const id = ++serial;
@@ -84,13 +88,36 @@ ipcMain.handle('app:action', async (event, action, value) => {
   if (!senderIsApp(event)) throw new Error('Invalid caller');
   if (action === 'boot') {
     const snapshot = await ready;
-    return { ...snapshot, version: app.getVersion(), launch_at_login: app.getLoginItemSettings({ path: process.execPath, args: ['--tray'] }).openAtLogin };
+    const virtual_device=await virtualDevice.status();
+    return { ...snapshot, virtual_device, version: app.getVersion(), launch_at_login: app.getLoginItemSettings({ path: process.execPath, args: ['--tray'] }).openAtLogin };
+  }
+  if (action === 'device-status') return virtualDevice.status();
+  if (action === 'driver-controls') return virtualDevice.controls();
+  if (action === 'remove-device') {
+    const answer=await dialog.showMessageBox(window,{type:'question',title:'Remove virtual microphone',message:'Remove the Clear Mic virtual microphone?',detail:'Live routing will stop. Other audio devices and shared driver packages will be kept. You can create the microphone again later.',buttons:['Cancel','Remove microphone'],defaultId:0,cancelId:0});
+    if(answer.response!==1)return {cancelled:true};
+    await request('stop');
+    const driver=await virtualDevice.remove();
+    const snapshot=await request('refresh');settings=snapshot.settings;
+    return {driver,snapshot};
+  }
+  if (action === 'create-device') {
+    const wasRunning=lastState==='running';
+    await request('stop');
+    try {
+      const driver=await virtualDevice.install();
+      const snapshot=await request('refresh',{prefer_created:true});settings=snapshot.settings;
+      if(wasRunning&&driver.endpoints.some(endpoint=>endpoint.flow==='output'))await request('start');
+      return { driver, snapshot };
+    } catch(error) { if(wasRunning)await request('start').catch(()=>{});throw error; }
   }
   if (action === 'minimize') window.minimize();
   else if (action === 'close') window.close();
   else if (action === 'quit') quit();
   else if (action === 'folder') { const error = await shell.openPath(dataDir); if (error) throw new Error(error); }
   else if (action === 'source') await shell.openExternal('https://github.com/burakemirsezen/clear-mic');
+  else if (action === 'driver-info') await shell.openExternal('https://vb-audio.com/Cable/');
+  else if (action === 'driver-license') await shell.openExternal('https://vb-audio.com/Services/licensing.htm');
   else if (action === 'login') {
     if (!app.isPackaged) throw new Error('Sign-in launch is available in the packaged app.');
     app.setLoginItemSettings({ openAtLogin: Boolean(value), path: process.execPath, args: ['--tray'] });

@@ -10,6 +10,13 @@
   --mint:#88dbc5;
   --font:'Segoe UI Variable Text','Segoe UI',sans-serif
 }
+.device-setup-card { padding: 17px 20px; margin-bottom: 16px; border-color: #88dbc52a; }
+.device-setup-heading { display: flex; align-items: center; gap: 12px; }
+.device-setup-heading>div:nth-child(2) { flex: 1; }
+.device-setup-heading p { color: var(--muted); font-size: 10px; margin: 5px 0 0; }
+.device-attribution { color: #849b9f; font-size: 9px; margin: 13px 0 0; line-height: 1.5; }
+.device-attribution button { background: transparent; color: #9bc9b6; font-size: 9px; padding: 0; }
+.device-setup-card[hidden] { display: none; }
 * {
   box-sizing:border-box
 }
@@ -907,6 +914,12 @@ select:hover {
 .settings-card {
   padding:20px;
   margin-bottom:16px
+}
+.button-row {
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:14px;
 }
 .setting-row {
   display:flex;
