@@ -5,7 +5,7 @@ from clear_mic.settings import Voice,voice_from
 
 class SpeechTests(unittest.TestCase):
     def processor(self,**values):
-        config=Voice(noise=0,highpass=0,compressor=0,limiter=0,makeup_db=0)
+        config=Voice(noise=0,highpass=0,compressor=0,limiter=0,makeup_db=0,auto_level=0)
         for k,v in values.items():setattr(config,k,v)
         p=Processor(config);self.addCleanup(p.close);return p
     def frames(self,p,signal):

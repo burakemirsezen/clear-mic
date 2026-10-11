@@ -15,7 +15,7 @@ class ServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'physical microphone'):service.start('Microphone (Steam Streaming Microphone)','CABLE Input',Voice())
     def test_preview_preserves_length_and_handles_final_partial_frame(self):
         source=np.random.default_rng(4).uniform(-.1,.1,4813).astype(np.float32)
-        voice=Voice(noise=0,highpass=0,compressor=0,limiter=1,makeup_db=0)
+        voice=Voice(noise=0,highpass=0,compressor=0,limiter=1,makeup_db=0,auto_level=0)
         out=process_clip(source,voice)
         self.assertEqual(len(source),len(out));np.testing.assert_allclose(out,source,atol=1e-7)
 

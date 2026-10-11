@@ -1,0 +1,2 @@
+WebRTC supplemental notices from official upstream commit aeea8ee2f0827d6755259a3691e864371a1a06f3.
+Component extractions are pinned separately in webrtc.lock.json.

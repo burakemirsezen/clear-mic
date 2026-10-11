@@ -1,0 +1,4 @@
+Enaium/webrtc-aec3
+Commit 2cec2f52e26646f93bd2d5498bbabf59cba18da9
+SHA256 92125077c71e126df16002a631e2527ece6803d7750ca48893712fda97bca8b6
+MSVC: /Zc:__cplusplus, forced array include, named SIMD lane arrays.

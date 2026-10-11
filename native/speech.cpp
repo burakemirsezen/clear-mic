@@ -7,7 +7,10 @@
 
 constexpr double SR=48000.0, PI=3.14159265358979323846;
 constexpr unsigned FRAME=480, LOOK=96, RING=LOOK+1;
-struct Config { int noise,highpass,compressor,limiter; float highpass_hz,threshold_db,ratio,knee_db,attack_ms,release_ms,makeup_db,presence_db,output_db,ceiling_db,input_db; };
+extern "C" __declspec(dllimport) void* cm_level_create();
+extern "C" __declspec(dllimport) void cm_level_destroy(void*);
+extern "C" __declspec(dllimport) float cm_level_process(void*,float*);
+struct Config { int noise,highpass,compressor,limiter; float highpass_hz,threshold_db,ratio,knee_db,attack_ms,release_ms,makeup_db,presence_db,output_db,ceiling_db,input_db; int auto_level; };
 struct Biquad {
     double b0=1,b1=0,b2=0,a1=0,a2=0,z1=0,z2=0;
     double process(double x){double y=b0*x+z1;z1=b1*x-a1*y+z2;z2=b2*x-a2*y;if(std::abs(z1)<1e-25)z1=0;if(std::abs(z2)<1e-25)z2=0;return y;}
@@ -15,11 +18,11 @@ struct Biquad {
     void presence(double db){double w=2*PI*2800/SR,c=cos(w),a=sin(w)/(2*.707),A=pow(10,db/40),a0=1+a/A;b0=(1+a*A)/a0;b1=-2*c/a0;b2=(1-a*A)/a0;a1=b1;a2=(1-a/A)/a0;}
 };
 struct State {
-    DenoiseState* noise=nullptr;Config c{};Biquad hp,eq;
+    DenoiseState* noise=nullptr;void* leveler=nullptr;Config c{};Biquad hp,eq;
     float input[FRAME]{},denoised[FRAME]{},ring[RING]{};
     float maxima[128]{};int64_t indices[128]{};unsigned head=0,tail=0;int64_t seq=0;
     double energy=0,comp_gain=1,lim_gain=1,attack=.99,release=.99,rms=.99,lim_release=.999;
-    float stats[5]{};
+    float stats[7]{};
 };
 static float clampf(float v,float lo,float hi){return std::clamp(v,lo,hi);}
 static double dbgain(double db){return pow(10.0,db/20.0);}
@@ -33,13 +36,19 @@ extern "C" __declspec(dllexport) int cm_configure(void* handle,const Config* val
     if(c.presence_db!=s.c.presence_db){s.eq.z1=s.eq.z2=0;s.eq.presence(c.presence_db);}
     if(c.limiter!=s.c.limiter){std::fill(s.ring,s.ring+RING,0.f);s.seq=0;s.head=s.tail=0;s.lim_gain=1;}
     if(c.compressor!=s.c.compressor){s.comp_gain=1;s.energy=0;}
+    if(c.auto_level!=s.c.auto_level){
+        void* leveler=c.auto_level?cm_level_create():nullptr;
+        if(c.auto_level&&!leveler)return -3;
+        cm_level_destroy(s.leveler);s.leveler=leveler;
+    }
     s.c=c;s.attack=exp(-1/(SR*c.attack_ms*.001));s.release=exp(-1/(SR*c.release_ms*.001));s.rms=exp(-1/(SR*.02));s.lim_release=exp(-1/(SR*.08));return 0;
 }
 extern "C" __declspec(dllexport) void* cm_create(){
     State* s=new(std::nothrow) State;if(!s)return nullptr;s->noise=rnnoise_create(nullptr);if(!s->noise){delete s;return nullptr;}
-    Config c{1,1,1,1,70,-20,2,6,10,150,2,0,0,-1,0};cm_configure(s,&c);return s;
+    Config c{1,1,1,1,70,-20,2,6,10,150,0,0,0,-1,0,1};
+    if(cm_configure(s,&c)){rnnoise_destroy(s->noise);delete s;return nullptr;}return s;
 }
-extern "C" __declspec(dllexport) void cm_destroy(void* handle){if(handle){State* s=(State*)handle;rnnoise_destroy(s->noise);delete s;}}
+extern "C" __declspec(dllexport) void cm_destroy(void* handle){if(handle){State* s=(State*)handle;rnnoise_destroy(s->noise);cm_level_destroy(s->leveler);delete s;}}
 extern "C" __declspec(dllexport) int cm_process(void* handle,const float* input,float* output,unsigned n){
     if(!handle||!input||!output||n!=FRAME)return -1;State& s=*(State*)handle;
     float ip=0,op=0;double comp_reduction=0,lim_reduction=0;unsigned clips=0;
@@ -48,7 +57,9 @@ extern "C" __declspec(dllexport) int cm_process(void* handle,const float* input,
         if(!std::isfinite(input[i]))return -2;ip=std::max(ip,std::abs(input[i]));if(std::abs(input[i])>=.999f)clips++;
         double x=input[i]*ing;if(s.c.highpass)x=s.hp.process(x);s.input[i]=(float)(x*32768.0);
     }
-    if(s.c.noise)rnnoise_process_frame(s.noise,s.denoised,s.input);else std::copy(s.input,s.input+n,s.denoised);
+    float vad=0;
+    if(s.c.noise)vad=rnnoise_process_frame(s.noise,s.denoised,s.input);else std::copy(s.input,s.input+n,s.denoised);
+    float automatic_gain=s.c.auto_level?cm_level_process(s.leveler,s.denoised):0;
     for(unsigned i=0;i<n;i++){
         double x=s.denoised[i]/32768.0;if(std::abs(s.c.presence_db)>.001)x=s.eq.process(x);
         if(s.c.compressor){
@@ -72,8 +83,8 @@ extern "C" __declspec(dllexport) int cm_process(void* handle,const float* input,
         }
         output[i]=(float)std::clamp(x,-1.0,1.0);op=std::max(op,std::abs(output[i]));
     }
-    s.stats[0]=ip;s.stats[1]=op;s.stats[2]=(float)comp_reduction;s.stats[3]=(float)lim_reduction;s.stats[4]=(float)clips;return 0;
+    s.stats[0]=ip;s.stats[1]=op;s.stats[2]=(float)comp_reduction;s.stats[3]=(float)lim_reduction;s.stats[4]=(float)clips;s.stats[5]=automatic_gain;s.stats[6]=vad;return 0;
 }
-extern "C" __declspec(dllexport) void cm_stats(void* handle,float* values){if(handle&&values)std::copy(((State*)handle)->stats,((State*)handle)->stats+5,values);}
+extern "C" __declspec(dllexport) void cm_stats(void* handle,float* values){if(handle&&values)std::copy(((State*)handle)->stats,((State*)handle)->stats+7,values);}
 extern "C" __declspec(dllexport) unsigned cm_latency(void* handle){return handle&&((State*)handle)->c.limiter?LOOK:0;}
 extern "C" __declspec(dllexport) int cm_cpu_supported(){int regs[4];__cpuid(regs,1);if(!(regs[2]&(1<<27))||!(regs[2]&(1<<28)))return 0;if((_xgetbv(0)&6)!=6)return 0;__cpuidex(regs,7,0);return (regs[1]&(1<<5))!=0;}

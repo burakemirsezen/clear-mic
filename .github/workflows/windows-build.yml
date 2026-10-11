@@ -19,6 +19,9 @@ jobs:
           node-version: '22'
       - run: npm ci --prefix desktop
       - run: python scripts/fetch_rnnoise.py
+      - run: python scripts/fetch_webrtc.py
+      - run: scripts\build_webrtc.cmd
+        shell: cmd
       - run: scripts\build_native.cmd
         shell: cmd
       - run: python scripts/fetch_vbcable.py

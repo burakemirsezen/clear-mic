@@ -1,13 +1,16 @@
 import ctypes as C
+import os
 from dataclasses import asdict
 import numpy as np
 from .paths import ROOT
 from .settings import Voice
 FRAME=480;RATE=48000;FP=C.POINTER(C.c_float)
+_dll_directory=os.add_dll_directory(str(ROOT/'vendor'))
 class Config(C.Structure):
-    _fields_=[(name,C.c_int if name in ('noise','highpass','compressor','limiter') else C.c_float) for name in Voice.__dataclass_fields__]
+    _fields_=[(name,C.c_int if name in ('noise','highpass','compressor','limiter','auto_level') else C.c_float) for name in Voice.__dataclass_fields__]
 class Processor:
     def __init__(self,voice=None):
+        voice=(voice or Voice()).validate()
         self.lib=C.CDLL(str(ROOT/'vendor'/'clearmic_native.dll'))
         self.lib.cm_cpu_supported.argtypes=[];self.lib.cm_cpu_supported.restype=C.c_int
         if not self.lib.cm_cpu_supported():raise RuntimeError('This Windows build requires an x64 CPU with AVX2 support.')
@@ -18,8 +21,10 @@ class Processor:
         self.lib.cm_stats.argtypes=[C.c_void_p,FP];self.lib.cm_stats.restype=None
         self.lib.cm_latency.argtypes=[C.c_void_p];self.lib.cm_latency.restype=C.c_uint
         self.state=self.lib.cm_create()
-        if not self.state:raise RuntimeError('Cannot initialize RNNoise')
-        self.values=np.empty(5,np.float32);self.configure(voice or Voice())
+        if not self.state:raise RuntimeError('Cannot initialize voice processing')
+        self.values=np.empty(7,np.float32)
+        try:self.configure(voice)
+        except Exception:self.close();raise
     def configure(self,voice):
         voice.validate();config=Config(**asdict(voice))
         if self.lib.cm_configure(self.state,C.byref(config)):raise ValueError('Invalid voice settings')

@@ -1,7 +1,7 @@
 const $ = id => document.getElementById(id);
 const state = { ready:false, settings:{}, devices:{input:[],output:[]}, presets:{}, stats:{status:'stopped'}, previewReady:false, recording:false };
 let saveTimer, saveChain = Promise.resolve(), commandBusy = false, lastError = '', playing = false;
-const stageNames = {noise:'Noise removal',highpass:'Rumble cut',compressor:'Compression',limiter:'Peak protection'};
+const stageNames = {highpass:'Rumble cut',noise:'Noise removal',auto_level:'Automatic volume',compressor:'Compression',limiter:'Peak protection'};
 const sliderDefinitions = [
   ['highpass_hz','Rumble cut',40,160,1,'Hz'], ['threshold_db','Compression threshold',-40,-6,.5,'dB'],
   ['ratio','Compression ratio',1,6,.1,':1'], ['makeup_db','Speech boost',0,8,.1,'dB'],
@@ -124,12 +124,14 @@ function pairedName() {
 }
 function renderSettings() {
   for(const [id,key,type] of [['input-device','input','input'],['output-device','output','output'],['listen-device','listen','output']])fillSelect(id,state.devices[type],state.settings[key]);
+  fillSelect('speaker-device',state.devices.output.filter(n=>!['clear mic','virtual','cable','voicemeeter','streaming microphone'].some(w=>n.toLowerCase().includes(w))),state.settings.speakers);
+  $('echo-cancel').checked=Boolean(state.settings.echo_cancel);
   for(const definition of sliderDefinitions)updateSlider(definition[0]);
   $('auto-start').checked=state.settings.auto_start;$('minimize-tray').checked=state.settings.minimize_to_tray;
   updatePresets();updateChain();pairedName();
 }
-for(const [id,key] of [['input-device','input'],['output-device','output'],['listen-device','listen']])$(id).onchange=()=>{state.settings[key]=$(id).value;pairedName();saveSettings().catch(()=>{});};
-for(const [id,key] of [['auto-start','auto_start'],['minimize-tray','minimize_to_tray']])$(id).onchange=()=>{state.settings[key]=$(id).checked;saveSettings().catch(()=>{});};
+for(const [id,key] of [['input-device','input'],['output-device','output'],['listen-device','listen'],['speaker-device','speakers']])$(id).onchange=()=>{state.settings[key]=$(id).value;pairedName();saveSettings().catch(()=>{});};
+for(const [id,key] of [['auto-start','auto_start'],['minimize-tray','minimize_to_tray'],['echo-cancel','echo_cancel']])$(id).onchange=()=>{state.settings[key]=$(id).checked;saveSettings().catch(()=>{});};
 $('launch-login').onchange=async()=>{try{$('launch-login').checked=await appAction('login',$('launch-login').checked);}catch{$('launch-login').checked=!$('launch-login').checked;}};
 $('refresh').onclick=async()=>{try{await saveSettings();const data=await call('refresh');state.settings=data.settings;state.devices=data.devices;renderSettings();footer('Devices refreshed.');}catch{}};
 $('toggle-mic').onclick=async()=>{
@@ -144,10 +146,12 @@ function updateStatus() {
   $('status-pill').classList.toggle('on',on);document.querySelector('.hero').classList.toggle('active',on);
   $('status-text').textContent=on?'MICROPHONE ON':stats.status==='starting'?'CONNECTING…':stats.status==='error'?'AUDIO STOPPED':'MICROPHONE OFF';
   $('hero-title').textContent=on?'Your clean mic is live.':stats.status==='starting'?'Getting your mic ready…':'Ready when you are.';
-  $('hero-description').textContent=on?'Your voice is being sent to the virtual microphone.':'Clean up background noise and keep your voice natural.';
+  $('hero-description').textContent=on?(stats.routing_note||'Your voice is being sent to the virtual microphone.'):'Clean up background noise and keep your voice natural.';
   $('toggle-mic').classList.toggle('on',active);$('toggle-mic').querySelector('span').textContent=active?'Turn off microphone':'Turn on microphone';
   $('toggle-mic').disabled=!state.ready||state.recording||commandBusy||state.settingUp;
   $('input-device').disabled=$('output-device').disabled=active||state.recording||state.settingUp;
+  $('speaker-device').disabled=$('echo-cancel').disabled=active||state.recording||state.settingUp;
+  $('echo-status').textContent=on&&stats.echo_enabled?(stats.reference_active&&stats.reference_db>-60?'Listening to speaker playback · '+Math.round(stats.reference_db)+' dB':'Echo cancellation ready · speakers quiet'):'Use the device playing your games and calls. Leave off with headphones.';
   $('refresh').disabled=active||state.recording||!state.ready||state.settingUp;
   $('record-preview').disabled=active||state.recording||!state.ready||state.settingUp;
   $('create-device').disabled=Boolean(state.driver?.foreign_vbcable||state.settingUp||state.recording||commandBusy);
@@ -162,6 +166,7 @@ function updateStatus() {
     $(name+'-level').style.width=`${(level+60)/60*100}%`;$(name+'-level').classList.toggle('hot',level>-6);
   }
   $('processing').textContent=on?stats.mean_ms.toFixed(2)+' ms':'—';$('compression').textContent=on?stats.compressor_gr.toFixed(1)+' dB':'—';$('limiting').textContent=on?stats.limiter_gr.toFixed(1)+' dB':'—';
+  $('automatic-gain').textContent=on?Number(stats.automatic_gain_db||0).toFixed(1)+' dB':'—';
   $('audio-warning').hidden=!(on&&(stats.clipped_samples||stats.warnings));$('audio-warning').textContent=stats.clipped_samples?'Input clipping detected. Lower the gain on your microphone.':`${stats.warnings||0} audio warning(s). Check your devices if sound drops out.`;
   if(stats.status==='error'&&stats.error!==lastError){lastError=stats.error;error(stats.error);}
   if(state.recording)$('preview-description').textContent='Speak naturally, then try a few quiet and louder words.';
@@ -198,6 +203,9 @@ window.runUiChecks=async()=>{
   const initial=structuredClone(state.settings);
   const before=state.settings.voice.output_db;$('slider-output_db').value=-3;$('slider-output_db').dispatchEvent(new Event('input'));await saveSettings();
   const saved=await call('snapshot');const savedSlider=saved.settings.voice.output_db===-3;
+  $('stage-auto_level').checked=false;$('stage-auto_level').dispatchEvent(new Event('change'));await saveSettings();
+  const levelSaved=(await call('snapshot')).settings.voice.auto_level===0;
+  const speakerControls=Boolean($('speaker-device')&&$('echo-cancel'));
   document.querySelector('[data-preset="Even speech"]').click();await saveChain;const presetSaved=(await call('snapshot')).settings.preset==='Even speech';
   state.settings=initial;renderSettings();await saveSettings();
   const originalDriver=state.driver;
@@ -208,6 +216,6 @@ window.runUiChecks=async()=>{
   const foreignProtected=$('create-device').disabled;
   state.driver=originalDriver;updateDriver();updateStatus();
   const sizes=window.checkLayout();
-  return {pass:savedSlider&&presetSaved&&setupVisible&&foreignProtected&&[...sizes,...setupPages].every(s=>s.noHorizontalOverflow&&s.contentVisible),savedSlider,presetSaved,setupVisible,foreignProtected,setupPages,pages:sizes,audioStatus:state.stats.status,previewRecorded:state.previewReady};
+  return {pass:savedSlider&&levelSaved&&speakerControls&&presetSaved&&setupVisible&&foreignProtected&&[...sizes,...setupPages].every(s=>s.noHorizontalOverflow&&s.contentVisible),savedSlider,levelSaved,speakerControls,presetSaved,setupVisible,foreignProtected,setupPages,pages:sizes,audioStatus:state.stats.status,previewRecorded:state.previewReady};
 };
 boot();

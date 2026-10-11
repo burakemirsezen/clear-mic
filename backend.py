@@ -7,16 +7,24 @@ from clear_mic.paths import initialize,DATA
 from clear_mic.settings import Voice,PRESETS,load,save,voice_from
 from clear_mic.audio_service import AudioService,devices,resolve,record_preview,process_clip,com_apartment
 from clear_mic.processor import RATE
+from clear_mic.echo import physical_speaker
 
 class Backend:
     def __init__(self):
-        self.service=AudioService();self.requests=queue.Queue();self.preview=None;self.busy=False;self.record_until=0
+        self.service=AudioService();self.requests=queue.Queue();self.preview=None;self.preview_reference=None;self.busy=False;self.record_until=0
         stored=load()
         if not isinstance(stored,dict):stored={}
-        try:voice=voice_from(stored.get('voice',{}))
+        stored_voice=stored.get('voice',{})
+        if not isinstance(stored_voice,dict):stored_voice={}
+        try:voice=voice_from(stored_voice)
         except (ValueError,TypeError,AttributeError):voice=Voice()
         self.settings={'input':stored.get('input',''),'output':stored.get('output',''),'listen':stored.get('listen',''),'voice':asdict(voice),'preset':stored.get('preset','Natural speech'),'auto_start':bool(stored.get('auto_start',False)),'minimize_to_tray':bool(stored.get('minimize_to_tray',True))}
         self.settings['created_device_selected']=bool(stored.get('created_device_selected',False))
+        self.settings['echo_cancel']=bool(stored.get('echo_cancel',False));self.settings['speakers']=stored.get('speakers','')
+        # Upgrade shipped presets without overwriting custom tuning.
+        if not isinstance(self.settings['preset'],str):self.settings['preset']='Natural speech'
+        if 'auto_level' not in stored_voice and self.settings['preset'] in PRESETS:
+            self.settings['voice']=asdict(PRESETS[self.settings['preset']])
         self.inventory={};self.refresh()
     def emit(self,value):
         print(json.dumps(value,allow_nan=False),flush=True)
@@ -32,41 +40,45 @@ class Backend:
         if self.settings['listen'] not in outputs:
             default=next((a['default_output_device'] for a in sd.query_hostapis() if a['name']=='Windows WASAPI'),-1)
             self.settings['listen']=next((n for n,i in self.inventory['output'] if i==default),outputs[0] if outputs else '')
+        physical=[n for n in outputs if physical_speaker(n)]
+        if self.settings['speakers'] not in physical:self.settings['speakers']=self.settings['listen'] if self.settings['listen'] in physical else (physical[0] if physical else '')
         return self.snapshot()
     def snapshot(self):
         return {'settings':self.settings,'devices':{k:[n for n,i in v] for k,v in self.inventory.items()},'presets':{k:asdict(v) for k,v in PRESETS.items()},'preview_ready':self.preview is not None}
     def configure(self,value):
         if not isinstance(value,dict):raise ValueError('Invalid settings')
         result=self.settings.copy()
-        for key in ('input','output','listen','preset'):
+        for key in ('input','output','listen','preset','speakers'):
             if key in value:
                 if not isinstance(value[key],str):raise ValueError('Invalid device or preset')
                 result[key]=value[key]
-        if self.service.active and any(result[k]!=self.settings[k] for k in ('input','output')):raise ValueError('Stop the microphone before changing routing.')
-        for key in ('auto_start','minimize_to_tray'):
+        for key in ('auto_start','minimize_to_tray','echo_cancel'):
             if key in value:result[key]=bool(value[key])
+        if (self.service.active or self.busy) and any(result[k]!=self.settings[k] for k in ('input','output','speakers','echo_cancel')):raise ValueError('Stop the microphone or finish recording before changing routing or speaker echo cancellation.')
+        if result['echo_cancel'] and not physical_speaker(result['speakers']):raise ValueError('Choose your physical speakers for echo cancellation.')
         if 'voice' in value:result['voice']=asdict(voice_from(value['voice']))
         save(result);self.settings=result;self.service.configure(voice_from(result['voice']))
         return self.settings
     def start(self):
         if self.busy:raise ValueError('Wait for the preview recording to finish.')
-        sd.stop();self.service.start(self.settings['input'],self.settings['output'],voice_from(self.settings['voice']))
+        sd.stop();self.service.start(self.settings['input'],self.settings['output'],voice_from(self.settings['voice']),self.settings['speakers'] if self.settings['echo_cancel'] else None)
     def record(self):
         if self.service.active or self.busy:raise ValueError('Stop the live microphone before recording a preview.')
         sd.stop();self.busy=True;self.record_until=time.monotonic()+5
-        name=self.settings['input'];voice=voice_from(self.settings['voice'])
+        name=self.settings['input'];voice=voice_from(self.settings['voice']);speaker=self.settings['speakers'] if self.settings['echo_cancel'] else None
         def capture():
             try:
-                raw=record_preview(name);processed=process_clip(raw,voice);stamp=str(time.time_ns())
+                captured=record_preview(name,speaker_name=speaker);raw,reference=captured if speaker is not None else (captured,None)
+                processed=process_clip(raw,voice,reference);stamp=str(time.time_ns())
                 sf.write(DATA/'previews'/f'{stamp}-original.wav',raw,RATE,subtype='FLOAT');sf.write(DATA/'previews'/f'{stamp}-processed.wav',processed,RATE,subtype='FLOAT')
-                self.requests.put({'internal':'preview','raw':raw})
+                self.requests.put({'internal':'preview','raw':raw,'reference':reference})
             except Exception as e:self.requests.put({'internal':'preview_error','message':str(e)})
         self.preview_thread=threading.Thread(target=capture,daemon=True);self.preview_thread.start()
     def handle(self,message):
         if not isinstance(message,dict):raise ValueError('Invalid request')
         if 'internal' in message:
             self.busy=False
-            if message['internal']=='preview':self.preview=message['raw'];self.emit({'event':'preview_ready'})
+            if message['internal']=='preview':self.preview=message['raw'];self.preview_reference=message.get('reference');self.emit({'event':'preview_ready'})
             else:self.emit({'event':'error','message':message['message']})
             return True
         action=message.get('action');value=message.get('value')
@@ -79,7 +91,8 @@ class Backend:
         elif action=='play':
             if self.preview is None or self.busy or self.service.active:raise ValueError('Record a preview and stop the live microphone first.')
             if value not in ('original','processed'):raise ValueError('Invalid playback mode')
-            audio=process_clip(self.preview,voice_from(self.settings['voice'])) if value=='processed' else self.preview
+            if value=='processed' and self.settings['echo_cancel'] and self.preview_reference is None:raise ValueError('Record a new preview with speaker echo cancellation enabled.')
+            audio=process_clip(self.preview,voice_from(self.settings['voice']),self.preview_reference if self.settings['echo_cancel'] else None) if value=='processed' else self.preview
             sd.stop();sd.play(audio,samplerate=RATE,device=resolve(self.settings['listen'],'output'),extra_settings=sd.WasapiSettings(auto_convert=True));result=True
         elif action=='stop_playback':sd.stop();result=True
         elif action=='quit':self.emit({'id':message.get('id'),'result':True});return False

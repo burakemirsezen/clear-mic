@@ -1,8 +1,8 @@
 # Clear Mic
 
-A local Windows voice microphone app. Clear Mic runs RNNoise on the CPU, then gives speech consistent volume with gentle compression and a peak limiter. No account, subscription, cloud inference, or GPU is required.
+A local Windows voice microphone app. Clear Mic combines RNNoise, WebRTC automatic volume, optional speaker echo cancellation, gentle compression and a peak limiter. No account, subscription, cloud inference, or GPU is required.
 
-Version 1.2 can create a dedicated Windows virtual microphone from inside the app. The Electron interface and native audio process run locally. The interface uses software rendering and pauses meter updates when hidden in the tray.
+Version 1.3 adds speech-aware automatic volume and WebRTC AEC3 with a stereo speaker reference. The app can create a dedicated Windows virtual microphone. The Electron interface and native audio process run locally; the interface uses software rendering and pauses meter updates when hidden in the tray.
 
 ## Download and use
 
@@ -12,6 +12,8 @@ Download the Windows ZIP from this repository's **Releases**, extract the entire
 2. Choose your physical microphone. Clear Mic selects its new playback feed automatically.
 3. Press **Turn on microphone**.
 4. In Steam, a game, or your calling app, select the paired virtual **recording** endpoint as its microphone.
+
+If using speakers, enable **Speaker echo cancellation** and choose the physical playback device actually playing your games/calls. Leave it off with headphones. Stop the microphone before changing those routing controls. AEC reduces playback leaking into the mic; it does not remove your own voice's room reflections.
 
 In your game, select **CABLE Output (Clear Mic (VB-Audio Virtual Cable))**. The app sends processed audio to **Speakers (Clear Mic (VB-Audio Virtual Cable))**. These are two ends of the newly created device. Setup restores the existing Windows playback and recording defaults if Windows selects the newly created cable; it reports a warning if restoration is unavailable. A restart may be required by Windows; Clear Mic never restarts the PC automatically.
 
@@ -28,28 +30,32 @@ The default **Natural speech** preset is intentionally gentle:
 | Stage | Default |
 |---|---|
 | Input trim | 0 dB |
+| Speaker echo cancellation | Optional WebRTC AEC3, physical 48 kHz stereo playback reference |
 | High-pass rumble reduction | 70 Hz, second-order |
 | Noise removal | RNNoise, 48 kHz mono |
+| Automatic volume | WebRTC AGC2; 18 dB maximum boost, speech/noise safeguards |
 | Presence EQ | Neutral; adjustable ±3 dB at 2.8 kHz |
 | Compressor | RMS detector, −20 dB threshold, 2:1 ratio, 6 dB soft knee |
 | Compressor timing | 10 ms attack, 150 ms release |
-| Makeup boost | 2 dB |
+| Makeup boost | 0 dB; automatic volume supplies adaptive gain |
 | Output trim | 0 dB |
 | Limiter | −1 dB sample-peak ceiling, 2 ms lookahead, 80 ms release |
 
-Use **Even speech** for more level control or **Noise removal only** to hear RNNoise without voice shaping. High-pass, compression, and limiting can be disabled independently. Sliders and presets apply while audio is running.
+Use **Even speech** for more level control or **Noise removal only** to hear RNNoise without voice shaping. High-pass, automatic volume, compression, and limiting can be disabled independently. Sliders and presets apply while audio is running. Automatic volume settles over several seconds and does not change the Windows or hardware microphone gain. Existing custom tuning is retained; shipped presets are upgraded to the new defaults.
 
 The limiter protects digital output peaks; it is not an oversampled intersample true-peak limiter. A microphone that clips before software processing needs lower hardware gain. No gate is added, so quiet word beginnings are not deliberately cut by another threshold stage.
 
-On the Voice page, **Record 5 seconds** captures only after pressing the button. Compare **Original** and **Processed** on the playback device selected in Settings. Replaying Processed uses the current settings. Stop live routing before preview recording. Short preview recordings and settings stay under `%LOCALAPPDATA%\ClearMic`; live audio is never saved. Open that folder from Settings to inspect or delete previews.
+On the Voice page, **Record 5 seconds** captures only after pressing the button. Compare **Original** and **Processed** on the playback device selected in Settings. Replaying Processed uses the current settings. With echo cancellation enabled, the preview also captures a speaker reference that stays in memory; the saved files contain only original/processed microphone audio. Record a new preview if enabling AEC after an ordinary preview. Stop live routing before preview recording. Short preview recordings and settings stay under `%LOCALAPPDATA%\ClearMic`; live audio is never saved. Open that folder from Settings to inspect or delete previews.
 
 ## Latency and performance
 
-All processing is native CPU code using AVX2. RNNoise processes 480-sample / 10 ms frames. The peak limiter adds exactly 96 samples / 2 ms of lookahead. RNNoise's own framing and Windows/virtual-driver buffering add further delay. Actual end-to-end delay depends on the devices and receiving application; filter-call processing time is not the full microphone latency.
+All processing is native CPU code using AVX2. RNNoise processes 480-sample / 10 ms frames. The peak limiter adds exactly 96 samples / 2 ms of lookahead. Optional AEC3 adds approximately 430 samples / 9 ms of measured impulse delay at 48 kHz in this build. RNNoise's own framing and Windows/virtual-driver buffering add further delay. Actual end-to-end delay depends on the devices and receiving application; filter-call processing time is not the full microphone latency.
 
 Setup saves a conservative 3072-sample current VB-CABLE buffer when its control interface is available. Otherwise it reports that the microphone is created with the driver's current defaults. That number is a driver setting, not a measurement of total latency. On the development PC, shared-WASAPI synthetic loopback measured approximately **110–145 ms** across runs, including Windows stream buffering. A live FIFINE → RNNoise → virtual device check ran without audio warnings, with about **0.5 ms** average processing per frame. These measurements do not include a receiving game's buffering or network delay. Use **Driver controls** in Settings if an application needs a larger buffer; consult the bundled vendor manual before reducing it.
 
-Meters report input and output levels, compressor/limiter gain reduction, processing time, audio warnings, and input clipping. Saved device names are resolved against the current WASAPI inventory rather than assuming permanent device numbers. Windows COM is initialized on audio background threads. No exclusive-mode capture is used.
+The new full chain with AEC ran at approximately 0.5–0.7 ms per 10 ms frame on the development Ryzen 7600X, with zero audio warnings during live routing. Synthetic stereo echo attenuation was approximately 35 dB after convergence. These measurements do not prove superiority to Discord or predict every room. [Research decisions and test limitations](RESEARCH.md) explain the implementation and evaluation.
+
+Meters report input/output sample peaks, effective automatic gain, compressor/limiter reduction, processing time, warnings and input clipping. Speaker reference status is visible; dropped reference packets and discontinuities are available in backend diagnostics. Device names are resolved against the current WASAPI inventory. Windows COM is initialized on audio threads. No exclusive-mode capture is used. If the owned cable's stereo feed rejects playback, Clear Mic can use the compatible 16-channel feed of that same cable without changing the microphone selected in your game.
 
 This Windows build requires Windows 10/11 x64 and an AVX2-capable CPU. An unsupported CPU is detected before inference starts. The downloadable executable is unsigned.
 
@@ -61,6 +67,8 @@ Install Python 3.14 x64, Node.js 22.12 or newer, and Visual Studio C++ x64 build
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements-build.txt
 .venv\Scripts\python.exe scripts\fetch_rnnoise.py
+.venv\Scripts\python.exe scripts\fetch_webrtc.py
+scripts\build_webrtc.cmd
 scripts\build_native.cmd
 .venv\Scripts\python.exe scripts\fetch_vbcable.py
 scripts\build_device_setup.cmd
@@ -75,7 +83,7 @@ Create the portable Windows ZIP:
 .venv\Scripts\python.exe scripts\package.py
 ```
 
-RNNoise source/model downloads come from official Xiph sources, pinned in `rnnoise.lock.json`. The complete original VB-CABLE package is pinned in `vbcable.lock.json` and retained unchanged; it is downloaded during the build and is not committed to Git. Builds use local MSVC. There are no Discord/Krisp libraries in this project.
+RNNoise source/model downloads come from official Xiph sources, pinned in `rnnoise.lock.json`. Community standalone extractions of WebRTC AEC3/AGC2 are pinned by source ZIP checksum and commit in `webrtc.lock.json`; Clear Mic adds small C bridges and reproducible MSVC fixes. The complete original VB-CABLE package is pinned in `vbcable.lock.json` and retained unchanged; it is downloaded during the build and is not committed to Git. Builds use local MSVC and CMake bundled with Visual Studio 2022. There are no Discord/Krisp libraries in this project.
 
 For a synthetic processing check without microphone capture:
 
@@ -89,6 +97,6 @@ Results are written to the app data folder's `self-test.json`. Tests cover high-
 
 ## Licensing
 
-Application source: MIT. RNNoise and its model source use the upstream BSD-style notices retained in `THIRD_PARTY/RNNoise-COPYING`. VB-CABLE has separate proprietary donationware terms, documented in `THIRD_PARTY/VB-CABLE-NOTICE.md`, the unchanged vendor package, and the vendor's current licensing page. Electron/Chromium, Python, NumPy, sounddevice/PortAudio, soundfile/libsndfile, and Pillow retain their own licenses. Distribution notices are included with the app.
+Application source: MIT. RNNoise and its model source use the upstream BSD-style notices retained in `THIRD_PARTY/RNNoise-COPYING`. WebRTC component licenses, patent grant and supplemental FFT/JsonCpp notices are retained in `THIRD_PARTY`. VB-CABLE has separate proprietary donationware terms, documented in `THIRD_PARTY/VB-CABLE-NOTICE.md`, the unchanged vendor package, and the vendor's current licensing page. Electron/Chromium, Python, NumPy, sounddevice/PortAudio, soundfile/libsndfile, and Pillow retain their own licenses. Distribution notices are included with the app.
 
 Built around [Xiph RNNoise](https://github.com/xiph/rnnoise) and [python-sounddevice](https://python-sounddevice.readthedocs.io/).

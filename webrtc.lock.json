@@ -1,0 +1,14 @@
+{
+  "aec3": {
+    "repo": "Enaium/webrtc-aec3",
+    "commit": "2cec2f52e26646f93bd2d5498bbabf59cba18da9",
+    "url": "https://codeload.github.com/Enaium/webrtc-aec3/zip/2cec2f52e26646f93bd2d5498bbabf59cba18da9",
+    "sha256": "92125077c71e126df16002a631e2527ece6803d7750ca48893712fda97bca8b6"
+  },
+  "agc2": {
+    "repo": "Enaium/webrtc-agc2",
+    "commit": "aa5d2359c357bc15495881c12c52874c8830af0a",
+    "url": "https://codeload.github.com/Enaium/webrtc-agc2/zip/aa5d2359c357bc15495881c12c52874c8830af0a",
+    "sha256": "d4293cc458631cb14a990940ea02ab798a069de2ec60366ff50d0b28e6522410"
+  }
+}

@@ -1,0 +1,22 @@
+/*
+ * http://www.kurims.kyoto-u.ac.jp/~ooura/fft.html
+ * Copyright Takuya OOURA, 1996-2001
+ *
+ * You may use, copy, modify and distribute this code for any purpose (include
+ * commercial use) and without fee. Please refer to this package when you modify
+ * this code.
+ *
+ * Changes by the WebRTC authors:
+ *    - Trivial type modifications.
+ *    - Minimal code subset to do rdft of length 128.
+ *    - Optimizations because of known length.
+ *    - Removed the global variables by moving the code in to a class in order
+ *      to make it thread safe.
+ *
+ *  All changes are covered by the WebRTC license and IP grant:
+ *  Use of this source code is governed by a BSD-style license
+ *  that can be found in the LICENSE file in the root of the source
+ *  tree. An additional intellectual property rights grant can be found
+ *  in the file PATENTS.  All contributing project authors may
+ *  be found in the AUTHORS file in the root of the source tree.
+ */
