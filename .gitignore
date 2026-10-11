@@ -1,0 +1,16 @@
+.venv/
+vendor/
+build/
+dist/
+release/
+.state/
+THIRD_PARTY/runtime/
+__pycache__/
+*.pyc
+*.obj
+*.lib
+*.exp
+*.dll
+*.exe
+*.zip
+*.spec

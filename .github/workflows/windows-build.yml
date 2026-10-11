@@ -1,0 +1,26 @@
+name: Windows build
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          architecture: x64
+      - run: python -m pip install -r requirements-build.txt
+      - run: python scripts/fetch_rnnoise.py
+      - run: scripts\build_native.cmd
+        shell: cmd
+      - run: python -m unittest discover -s tests -v
+      - run: python scripts/package.py
+      - name: Verify packaged processing
+        run: python -c "import subprocess; subprocess.run(['dist/ClearMic/ClearMic.exe', '--self-test'], check=True, timeout=60)"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ClearMic-windows-x64
+          path: release/*.zip
