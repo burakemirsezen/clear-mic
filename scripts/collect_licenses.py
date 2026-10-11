@@ -1,7 +1,7 @@
 import importlib.metadata as metadata,shutil,sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];target=ROOT/'THIRD_PARTY'/'runtime';target.mkdir(exist_ok=True)
-for name in ['numpy','sounddevice','soundfile','pillow','pystray','cffi','pycparser','six','typing-extensions']:
+for name in ['numpy','sounddevice','soundfile','pillow','cffi','pycparser','typing-extensions']:
     dist=metadata.distribution(name)
     for file in dist.files or []:
         if 'license' not in str(file).lower() and 'copying' not in str(file).lower():continue

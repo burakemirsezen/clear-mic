@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Clear Mic</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="renderer.js" defer></script>
+</head>
+<body>
+  <svg class="symbol-library" aria-hidden="true"><defs>
+    <symbol id="mic" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="13" rx="4"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></symbol>
+    <symbol id="sliders" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="8" cy="18" r="2"/></symbol>
+    <symbol id="gear" viewBox="0 0 24 24"><path d="m10 3 .5-1h3L14 3l1 2 2 .5 2-.5 2 3-1 2v4l1 2-2 3-2-.5-2 .5-1 2-.5 1h-3L10 21l-1-2-2-.5-2 .5-2-3 1-2v-4L3 8l2-3 2 .5L9 5Z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
+    <symbol id="power" viewBox="0 0 24 24"><path d="M12 2v10M6 5a9 9 0 1 0 12 0"/></symbol>
+    <symbol id="wave" viewBox="0 0 24 24"><path d="M3 10v4M7 6v12M12 2v20M17 6v12M21 10v4"/></symbol>
+    <symbol id="check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2 6M20 4v7h-7"/></symbol>
+    <symbol id="play" viewBox="0 0 24 24"><path d="m8 5 12 7-12 7Z"/></symbol>
+    <symbol id="folder" viewBox="0 0 24 24"><path d="M3 5h7l2 3h9v12H3Z"/></symbol>
+  </defs></svg>
+  <div class="titlebar"><span>CLEAR MIC</span><div class="window-buttons"><button id="minimize" aria-label="Minimize">−</button><button id="close" aria-label="Close window">×</button></div></div>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark"><svg><use href="#mic"/></svg></div><span>Clear Mic<span class="brand-caption">Sound like yourself.</span></span></div>
+      <div class="nav-label">WORKSPACE</div>
+      <nav aria-label="Main navigation">
+        <button class="nav active" data-page="microphone"><svg><use href="#mic"/></svg>Microphone<span class="nav-indicator"></span></button>
+        <button class="nav" data-page="voice"><svg><use href="#sliders"/></svg>Voice</button>
+        <button class="nav" data-page="settings"><svg><use href="#gear"/></svg>Settings</button>
+      </nav>
+      <div class="sidebar-bottom"><div class="privacy-dot"></div><div>On your device<span>Audio stays local</span></div><small id="version">1.1.0</small></div>
+    </aside>
+    <main>
+      <div class="error-banner" id="error" role="alert" hidden><span id="error-text"></span><button id="dismiss-error" aria-label="Dismiss error">×</button></div>
+      <section class="page active" id="page-microphone">
+        <header class="page-header"><div><p class="eyebrow">YOUR WORKSPACE</p><h1>Microphone</h1><p class="page-description">Clear sound for games and calls.</p></div><button class="subtle icon-button" id="refresh"><svg><use href="#refresh"/></svg>Refresh devices</button></header>
+        <div class="hero card">
+          <div class="hero-top"><span class="status-pill" id="status-pill"><i></i><span id="status-text">MICROPHONE OFF</span></span><button class="preset-link" id="preset-shortcut"><svg><use href="#sliders"/></svg><span id="current-preset">Natural speech</span><span>↗</span></button></div>
+          <div class="hero-main"><div class="mic-orb"><svg><use href="#mic"/></svg><span class="orb-ring"></span></div><div class="hero-copy"><h2 id="hero-title">Ready when you are.</h2><p id="hero-description">Clean up background noise and keep your voice natural.</p><button class="primary" id="toggle-mic"><svg><use href="#power"/></svg><span>Turn on microphone</span></button></div><div class="hero-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+          <div class="routing"><label><span class="field-label">01 <b>YOUR MICROPHONE</b></span><div class="select-wrap"><select id="input-device" aria-label="Your microphone"><option>Loading devices…</option></select></div></label><svg class="route-arrow"><use href="#arrow"/></svg><label><span class="field-label">02 <b>SEND CLEAN AUDIO TO</b></span><div class="select-wrap"><select id="output-device" aria-label="Virtual microphone output"><option>Loading devices…</option></select></div></label></div>
+        </div>
+        <div class="dashboard-grid">
+          <div class="card levels-card"><div class="card-heading"><h3>Signal levels</h3><span class="muted small" id="signal-caption">Waiting for audio</span></div><div class="level-row"><div><span>Mic input</span><strong id="input-db">—</strong></div><div class="meter-track"><div class="meter-fill" id="input-level"></div></div></div><div class="level-row"><div><span>Clean output</span><strong id="output-db">—</strong></div><div class="meter-track"><div class="meter-fill" id="output-level"></div></div></div><div class="metrics"><span>Processing <b id="processing">—</b></span><span>Compression <b id="compression">—</b></span><span>Limiter <b id="limiting">—</b></span></div><p class="warning" id="audio-warning" hidden></p></div>
+          <div class="card connection-card"><div class="card-icon"><svg><use href="#arrow"/></svg></div><h3>One last step in your app</h3><p>In your game or calling app, choose this as the microphone:</p><div class="paired-device" id="paired-device">The paired virtual microphone</div><span class="muted small">Clear Mic uses your installed virtual audio device.</span></div>
+        </div>
+        <div class="chain-strip"><span>YOUR VOICE CHAIN</span><div id="chain-stages"></div><button class="text-button" id="tune-voice">Tune your voice <span>→</span></button></div>
+      </section>
+      <section class="page" id="page-voice">
+        <header class="page-header"><div><p class="eyebrow">VOICE STUDIO</p><h1>Voice</h1><p class="page-description">Start with a preset. Adjust as little or as much as you like.</p></div></header>
+        <div class="preset-grid" id="presets"></div>
+        <div class="card voice-card"><div class="card-heading"><div><h3>Your voice chain</h3><p class="muted small">Changes apply while your microphone is on.</p></div><span class="badge" id="voice-preset-badge">Natural speech</span></div><div class="stage-toggles" id="stages"></div><div class="slider-grid" id="voice-sliders"></div></div>
+        <div class="card preview-card"><div class="preview-heading"><div class="card-icon"><svg><use href="#wave"/></svg></div><div><h3>Hear the difference</h3><p class="muted small" id="preview-description">Record five seconds, then compare your original and processed voice.</p></div></div><div class="preview-controls"><button class="secondary" id="record-preview"><span class="record-dot"></span><span>Record 5 seconds</span></button><div class="playback-buttons"><button class="subtle" id="play-original" disabled><svg><use href="#play"/></svg>Original</button><button class="subtle" id="play-processed" disabled><svg><use href="#play"/></svg>Processed</button><button class="subtle stop-button" id="stop-playback" aria-label="Stop preview playback">■</button></div></div><div class="record-progress" id="record-progress" hidden><span></span></div><p class="preview-note">Preview recordings stay on this PC. Live audio is never saved.</p></div>
+      </section>
+      <section class="page" id="page-settings">
+        <header class="page-header"><div><p class="eyebrow">PREFERENCES</p><h1>Settings</h1><p class="page-description">Set it once. Get back to talking.</p></div></header>
+        <div class="card settings-card"><h3>Playback & behavior</h3><div class="setting-row"><div><h4>Preview playback</h4><p>Where you hear your voice recordings.</p></div><div class="select-wrap"><select id="listen-device" aria-label="Preview playback device"></select></div></div><div class="setting-row"><div><h4>Start the microphone on launch</h4><p>Begin processing with your saved devices.</p></div><label class="switch"><input id="auto-start" type="checkbox" aria-label="Start microphone automatically"><span></span></label></div><div class="setting-row"><div><h4>Keep running in the tray</h4><p>Closing the window keeps your microphone on.</p></div><label class="switch"><input id="minimize-tray" type="checkbox" aria-label="Close window to tray"><span></span></label></div><div class="setting-row"><div><h4>Launch at Windows sign-in</h4><p>Open quietly in the system tray.</p></div><label class="switch"><input id="launch-login" type="checkbox" aria-label="Launch at Windows sign-in"><span></span></label></div></div>
+        <div class="card settings-card"><div class="card-heading"><div><h3>Fine adjustments</h3><p class="muted small">For microphones that need a little extra care.</p></div><span class="badge">ADVANCED</span></div><div class="slider-grid" id="advanced-sliders"></div><p class="preview-note">The limiter adds 2 ms of lookahead. If your mic input clips, lower its hardware gain.</p></div>
+        <div class="settings-footer"><div><strong>Clear Mic</strong><span>Local processing. No subscription.</span></div><div><button class="subtle" id="data-folder"><svg><use href="#folder"/></svg>Data folder</button><button class="subtle" id="source-link">GitHub ↗</button><button class="subtle danger" id="quit">Quit app</button></div></div>
+      </section>
+      <footer class="app-footer"><span id="footer-message">Connecting to your audio service…</span><span class="saved" id="save-status">All changes saved</span></footer>
+    </main>
+  </div>
+</body>
+</html>

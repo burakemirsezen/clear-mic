@@ -1,0 +1,11 @@
+{
+  "name": "clear-mic",
+  "productName": "Clear Mic",
+  "version": "1.1.0",
+  "description": "A local voice microphone app",
+  "main": "main.cjs",
+  "private": true,
+  "license": "MIT",
+  "scripts": { "start": "electron .", "ui-test": "electron . --ui-test" },
+  "devDependencies": { "electron": "44.7.0", "@electron/packager": "20.3.0" }
+}
