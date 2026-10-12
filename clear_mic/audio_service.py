@@ -90,6 +90,7 @@ class AudioService:
                         outdata[:]=result[:,None];frames+=1;sum_ms+=elapsed;max_ms=max(max_ms,elapsed);clipped+=raw_clips
                         self.stats={'status':'running','input_db':db(raw_peak),'output_db':db(float(levels[1])),'compressor_gr':float(levels[2]),'limiter_gr':float(levels[3]),'automatic_gain_db':float(levels[5]),'frames':frames,'warnings':warnings,'mean_ms':sum_ms/frames,'max_ms':max_ms,'clipped_samples':clipped,'echo_enabled':bool(echo),'reference_active':reference_peak>0,'reference_db':db(reference_peak),'reference_drops':int(reference.counters[0]) if reference else 0,'reference_discontinuities':int(reference.counters[1]) if reference else 0,'echo_delay_ms':float(echo.metrics[1]) if echo else 0}
                         self.stats['routing_note']=routing_note
+                        self.stats['echo_processing']=bool(echo is not None and echo.metrics[2]>0)
                     except Exception as e:outdata.fill(0);error.append(str(e));raise sd.CallbackAbort
                 stream,routing_note=open_route(inp,out,callback,output_name)
                 with stream:
@@ -150,3 +151,21 @@ def process_clip(signal,voice,reference=None):
     # Measured impulse delay of AEC3's 48 kHz splitting/merging and block framing.
     delay=(960 if voice.noise else 0)+(96 if voice.limiter else 0)+(430 if echo is not None else 0)
     return out[delay:delay+len(signal)].copy()
+
+def match_preview_level(original,processed):
+    """Match Original to the processed speech level for a fair local A/B.
+
+    Use the same voiced time regions in both files, rather than background noise
+    or the largest single peak. Do not change the live stream or saved WAVs.
+    """
+    original=np.asarray(original,dtype=np.float32)
+    count=len(original)//FRAME*FRAME
+    if not count:return original.copy()
+    energy=np.mean(original[:count].reshape(-1,FRAME).astype(np.float64)**2,axis=1)
+    active=energy>max(float(np.max(energy))*10**(-18/10),10**(-55/10))
+    if not np.any(active):return original.copy()
+    x=original[:count].reshape(-1,FRAME)[active].astype(np.float64)
+    y=np.asarray(processed[:count],np.float64).reshape(-1,FRAME)[active]
+    gain=min(10**(18/20),np.sqrt(np.mean(y*y)/max(np.mean(x*x),1e-18)))
+    gain=min(gain,10**(-1/20)/max(float(np.max(np.abs(original))),1e-9))
+    return np.asarray(original*gain,np.float32)

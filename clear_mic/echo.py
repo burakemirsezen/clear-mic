@@ -4,7 +4,7 @@ import numpy as np
 from .processor import FP,FRAME,ROOT
 
 def physical_speaker(name):
-    return bool(name) and not any(w in name.lower() for w in ('clear mic','virtual','cable','voicemeeter','streaming microphone'))
+    return bool(name) and not any(w in name.lower() for w in ('clear mic','virtual','cable','voicemeeter','streaming microphone','streaming speakers'))
 
 class EchoCanceller:
     def __init__(self):
@@ -15,7 +15,7 @@ class EchoCanceller:
         self.lib.cm_echo_metrics.argtypes=[C.c_void_p,FP];self.lib.cm_echo_metrics.restype=None
         self.lib.cm_echo_render.argtypes=[C.c_void_p,FP];self.lib.cm_echo_render.restype=C.c_int
         self.lib.cm_echo_capture.argtypes=[C.c_void_p,FP,FP,C.c_int];self.lib.cm_echo_capture.restype=C.c_int
-        self.state=self.lib.cm_echo_create();self.metrics=np.zeros(2,np.float32)
+        self.state=self.lib.cm_echo_create();self.metrics=np.zeros(3,np.float32)
         if not self.state:raise RuntimeError('Cannot initialize speaker echo cancellation')
     def process(self,mic,reference,output):
         if not self.state:raise RuntimeError('Echo canceller is closed')

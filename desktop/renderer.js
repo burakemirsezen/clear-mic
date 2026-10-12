@@ -3,6 +3,7 @@ const state = { ready:false, settings:{}, devices:{input:[],output:[]}, presets:
 let saveTimer, saveChain = Promise.resolve(), commandBusy = false, lastError = '', playing = false;
 const stageNames = {highpass:'Rumble cut',noise:'Noise removal',auto_level:'Automatic volume',compressor:'Compression',limiter:'Peak protection'};
 const sliderDefinitions = [
+  ['noise_strength','Noise strength',0,100,1,'%'],
   ['highpass_hz','Rumble cut',40,160,1,'Hz'], ['threshold_db','Compression threshold',-40,-6,.5,'dB'],
   ['ratio','Compression ratio',1,6,.1,':1'], ['makeup_db','Speech boost',0,8,.1,'dB'],
   ['presence_db','Clarity EQ',-3,3,.1,'dB'], ['output_db','Output volume',-18,6,.1,'dB'],
@@ -85,7 +86,7 @@ for(const [index,[name,label,low,high,step,unit]] of sliderDefinitions.entries()
   const input=document.createElement('input');input.type='range';input.min=low;input.max=high;input.step=step;input.id='slider-'+name;
   input.addEventListener('input',()=>{if(!state.ready)return;state.settings.voice[name]=Number(input.value);state.settings.preset='Custom';updateSlider(name);updatePresets();scheduleSave();});
   const ends=document.createElement('div');ends.className='slider-ends';const a=document.createElement('span'),b=document.createElement('span');a.textContent=format(low,unit);b.textContent=format(high,unit);ends.append(a,b);
-  control.append(heading,input,ends);$(index<6?'voice-sliders':'advanced-sliders').append(control);
+  control.append(heading,input,ends);$(index<7?'voice-sliders':'advanced-sliders').append(control);
 }
 for(const [name,label] of Object.entries(stageNames)) {
   const group=document.createElement('div');group.className='stage-toggle';
@@ -124,14 +125,15 @@ function pairedName() {
 }
 function renderSettings() {
   for(const [id,key,type] of [['input-device','input','input'],['output-device','output','output'],['listen-device','listen','output']])fillSelect(id,state.devices[type],state.settings[key]);
-  fillSelect('speaker-device',state.devices.output.filter(n=>!['clear mic','virtual','cable','voicemeeter','streaming microphone'].some(w=>n.toLowerCase().includes(w))),state.settings.speakers);
+  fillSelect('speaker-device',state.devices.output.filter(n=>!['clear mic','virtual','cable','voicemeeter','streaming microphone','streaming speakers'].some(w=>n.toLowerCase().includes(w))),state.settings.speakers);
   $('echo-cancel').checked=Boolean(state.settings.echo_cancel);
+  $('preview-match').checked=Boolean(state.settings.preview_match);
   for(const definition of sliderDefinitions)updateSlider(definition[0]);
   $('auto-start').checked=state.settings.auto_start;$('minimize-tray').checked=state.settings.minimize_to_tray;
   updatePresets();updateChain();pairedName();
 }
 for(const [id,key] of [['input-device','input'],['output-device','output'],['listen-device','listen'],['speaker-device','speakers']])$(id).onchange=()=>{state.settings[key]=$(id).value;pairedName();saveSettings().catch(()=>{});};
-for(const [id,key] of [['auto-start','auto_start'],['minimize-tray','minimize_to_tray'],['echo-cancel','echo_cancel']])$(id).onchange=()=>{state.settings[key]=$(id).checked;saveSettings().catch(()=>{});};
+for(const [id,key] of [['auto-start','auto_start'],['minimize-tray','minimize_to_tray'],['echo-cancel','echo_cancel'],['preview-match','preview_match']])$(id).onchange=()=>{state.settings[key]=$(id).checked;saveSettings().catch(()=>{});};
 $('launch-login').onchange=async()=>{try{$('launch-login').checked=await appAction('login',$('launch-login').checked);}catch{$('launch-login').checked=!$('launch-login').checked;}};
 $('refresh').onclick=async()=>{try{await saveSettings();const data=await call('refresh');state.settings=data.settings;state.devices=data.devices;renderSettings();footer('Devices refreshed.');}catch{}};
 $('toggle-mic').onclick=async()=>{
@@ -151,7 +153,7 @@ function updateStatus() {
   $('toggle-mic').disabled=!state.ready||state.recording||commandBusy||state.settingUp;
   $('input-device').disabled=$('output-device').disabled=active||state.recording||state.settingUp;
   $('speaker-device').disabled=$('echo-cancel').disabled=active||state.recording||state.settingUp;
-  $('echo-status').textContent=on&&stats.echo_enabled?(stats.reference_active&&stats.reference_db>-60?'Listening to speaker playback · '+Math.round(stats.reference_db)+' dB':'Echo cancellation ready · speakers quiet'):'Use the device playing your games and calls. Leave off with headphones.';
+  $('echo-status').textContent=on&&stats.echo_enabled?(stats.echo_processing?'Removing speaker echo · playback and room tail':'Echo stage transparent · speakers quiet'):'Use the device playing your games and calls. Leave off with headphones.';
   $('refresh').disabled=active||state.recording||!state.ready||state.settingUp;
   $('record-preview').disabled=active||state.recording||!state.ready||state.settingUp;
   $('create-device').disabled=Boolean(state.driver?.foreign_vbcable||state.settingUp||state.recording||commandBusy);
@@ -203,6 +205,10 @@ window.runUiChecks=async()=>{
   const initial=structuredClone(state.settings);
   const before=state.settings.voice.output_db;$('slider-output_db').value=-3;$('slider-output_db').dispatchEvent(new Event('input'));await saveSettings();
   const saved=await call('snapshot');const savedSlider=saved.settings.voice.output_db===-3;
+  $('slider-noise_strength').value=85;$('slider-noise_strength').dispatchEvent(new Event('input'));await saveSettings();
+  const noiseStrengthSaved=(await call('snapshot')).settings.voice.noise_strength===85;
+  $('preview-match').checked=false;$('preview-match').dispatchEvent(new Event('change'));await saveSettings();
+  const comparisonSaved=(await call('snapshot')).settings.preview_match===false;
   $('stage-auto_level').checked=false;$('stage-auto_level').dispatchEvent(new Event('change'));await saveSettings();
   const levelSaved=(await call('snapshot')).settings.voice.auto_level===0;
   const speakerControls=Boolean($('speaker-device')&&$('echo-cancel'));
@@ -216,6 +222,6 @@ window.runUiChecks=async()=>{
   const foreignProtected=$('create-device').disabled;
   state.driver=originalDriver;updateDriver();updateStatus();
   const sizes=window.checkLayout();
-  return {pass:savedSlider&&levelSaved&&speakerControls&&presetSaved&&setupVisible&&foreignProtected&&[...sizes,...setupPages].every(s=>s.noHorizontalOverflow&&s.contentVisible),savedSlider,levelSaved,speakerControls,presetSaved,setupVisible,foreignProtected,setupPages,pages:sizes,audioStatus:state.stats.status,previewRecorded:state.previewReady};
+  return {pass:savedSlider&&noiseStrengthSaved&&comparisonSaved&&levelSaved&&speakerControls&&presetSaved&&setupVisible&&foreignProtected&&[...sizes,...setupPages].every(s=>s.noHorizontalOverflow&&s.contentVisible),savedSlider,noiseStrengthSaved,comparisonSaved,levelSaved,speakerControls,presetSaved,setupVisible,foreignProtected,setupPages,pages:sizes,audioStatus:state.stats.status,previewRecorded:state.previewReady};
 };
 boot();

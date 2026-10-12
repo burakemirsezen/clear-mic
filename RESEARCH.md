@@ -1,6 +1,14 @@
 # Voice processing decisions
 
-Clear Mic 1.3 retains RNNoise and adds WebRTC AGC2 and optional AEC3. This is a practical CPU baseline for a Windows speech microphone. It has not been shown to outperform Discord in a matched listening test.
+Clear Mic 1.4 retains RNNoise and adds WebRTC AGC2 and optional AEC3. This is a practical CPU baseline for a Windows speech microphone. It has not been shown to outperform Discord in a matched listening test.
+
+## Preserve speech detail
+
+Version 1.4 adds a time-aligned original/denoised blend. Natural speech uses 90% denoised output and 10% original signal after input trim and high-pass filtering; Noise removal only retains 100% RNNoise. Strength changes ramp over 20 ms to avoid clicks. Both paths retain RNNoise's measured 960-sample / 20 ms delay, so the control adds no latency. More original signal preserves detail but also retains more background noise; this is a tradeoff, not a free improvement or a guarantee of noise attenuation.
+
+This is an engineering adaptation of a common attenuation-limit approach: [DeepFilterNet's implementation](https://github.com/Rikorose/DeepFilterNet/blob/v0.5.6/libDF/src/tract.rs) limits attenuation by mixing the original and enhanced spectra. Clear Mic uses an aligned time-domain blend with RNNoise instead. [DeepFilterNet research](https://arxiv.org/abs/2305.08227) makes it a candidate for a future model comparison; that model is not bundled here and no quality claim is transferred from its paper to this app.
+
+Noise suppression, automatic gain and echo suppression must be assessed separately. The preview's optional loudness matching raises or lowers Original to the processed speech RMS using the same active regions, bounded by a sample-peak ceiling and 18 dB gain cap. Saved recordings and the actual live stream are unchanged. Loudness matching is approximate, not a perceptual loudness standard.
 
 ## Volume
 
@@ -17,6 +25,8 @@ A checksum-pinned upstream spoken test clip, repeated for convergence and tested
 Playback packets are kept in a bounded eight-frame queue. Live processing drains available render frames before each microphone block; it does not assume the speaker and microphone clocks produce one packet each at the same instant. Stale playback is discarded, silence is supplied when playback is idle, and a disconnected reference stops the route with an error. Dropped reference frames and discontinuities are exposed in backend diagnostics. This is a first implementation, not a claim of perfect clock synchronization or immunity to every Windows sound effect.
 
 Echo cancellation is off by default in the public release; enable it for speakers and select the endpoint actually playing the game/call. It is unnecessary with headphones. Reference and microphone audio are not saved during live use. Explicit five-second previews retain their reference in memory so Processed can include AEC; only original and processed microphone WAVs are saved locally.
+
+When speaker reference exceeds −50 dBFS sample peak, Clear Mic fades into AEC over 10 ms. It holds that path for 700 ms after the last active reference block to cover playback reflections, then fades back over 50 ms to the original microphone delayed by 430 samples. AEC keeps running to retain its adaptation state. The quiet path now reproduces input samples exactly; the delay stays fixed across transitions. A local route check exposed a reference background around −56 dBFS that would keep a lower threshold continuously engaged. The −50 dB threshold and tail duration are engineering choices, not universal acoustic guarantees. Very quiet playback below the threshold may pass through; sufficiently loud background playback can keep AEC engaged. This does not bypass RNNoise or downstream voice filters. The UI reports the actual echo-processing state, including the held tail.
 
 AEC3 adds approximately 430 samples / 9 ms of measured impulse delay at 48 kHz in this build, beyond RNNoise and limiter delay. A deterministic delayed-stereo echo test measured about 35 dB attenuation after convergence. That number describes the synthetic test, not this user's room or Discord.
 

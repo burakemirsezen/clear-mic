@@ -10,7 +10,7 @@ constexpr unsigned FRAME=480, LOOK=96, RING=LOOK+1;
 extern "C" __declspec(dllimport) void* cm_level_create();
 extern "C" __declspec(dllimport) void cm_level_destroy(void*);
 extern "C" __declspec(dllimport) float cm_level_process(void*,float*);
-struct Config { int noise,highpass,compressor,limiter; float highpass_hz,threshold_db,ratio,knee_db,attack_ms,release_ms,makeup_db,presence_db,output_db,ceiling_db,input_db; int auto_level; };
+struct Config { int noise,highpass,compressor,limiter; float highpass_hz,threshold_db,ratio,knee_db,attack_ms,release_ms,makeup_db,presence_db,output_db,ceiling_db,input_db; int auto_level; float noise_strength; };
 struct Biquad {
     double b0=1,b1=0,b2=0,a1=0,a2=0,z1=0,z2=0;
     double process(double x){double y=b0*x+z1;z1=b1*x-a1*y+z2;z2=b2*x-a2*y;if(std::abs(z1)<1e-25)z1=0;if(std::abs(z2)<1e-25)z2=0;return y;}
@@ -20,6 +20,7 @@ struct Biquad {
 struct State {
     DenoiseState* noise=nullptr;void* leveler=nullptr;Config c{};Biquad hp,eq;
     float input[FRAME]{},denoised[FRAME]{},ring[RING]{};
+    float original[960]{},dry[FRAME]{};unsigned original_index=0;float noise_mix=1;
     float maxima[128]{};int64_t indices[128]{};unsigned head=0,tail=0;int64_t seq=0;
     double energy=0,comp_gain=1,lim_gain=1,attack=.99,release=.99,rms=.99,lim_release=.999;
     float stats[7]{};
@@ -28,10 +29,12 @@ static float clampf(float v,float lo,float hi){return std::clamp(v,lo,hi);}
 static double dbgain(double db){return pow(10.0,db/20.0);}
 extern "C" __declspec(dllexport) int cm_configure(void* handle,const Config* value){
     if(!handle||!value)return -1;State& s=*(State*)handle;Config c=*value;
-    const float values[]={c.highpass_hz,c.threshold_db,c.ratio,c.knee_db,c.attack_ms,c.release_ms,c.makeup_db,c.presence_db,c.output_db,c.ceiling_db,c.input_db};for(float v:values)if(!std::isfinite(v))return -2;
+    const float values[]={c.highpass_hz,c.threshold_db,c.ratio,c.knee_db,c.attack_ms,c.release_ms,c.makeup_db,c.presence_db,c.output_db,c.ceiling_db,c.input_db,c.noise_strength};for(float v:values)if(!std::isfinite(v))return -2;
     c.highpass_hz=clampf(c.highpass_hz,40,160);c.threshold_db=clampf(c.threshold_db,-40,-6);c.ratio=clampf(c.ratio,1,6);c.knee_db=clampf(c.knee_db,0,12);
     c.attack_ms=clampf(c.attack_ms,1,50);c.release_ms=clampf(c.release_ms,50,500);c.makeup_db=clampf(c.makeup_db,0,8);c.presence_db=clampf(c.presence_db,-3,3);
     c.output_db=clampf(c.output_db,-18,6);c.ceiling_db=clampf(c.ceiling_db,-6,-.5);c.input_db=clampf(c.input_db,-18,12);
+    c.noise_strength=clampf(c.noise_strength,0,100);
+    if(c.noise!=s.c.noise){std::fill(s.original,s.original+960,0.f);s.original_index=0;rnnoise_init(s.noise,nullptr);s.noise_mix=c.noise_strength/100.f;}
     if(c.highpass!=s.c.highpass||c.highpass_hz!=s.c.highpass_hz){s.hp.z1=s.hp.z2=0;s.hp.highpass(c.highpass_hz);}
     if(c.presence_db!=s.c.presence_db){s.eq.z1=s.eq.z2=0;s.eq.presence(c.presence_db);}
     if(c.limiter!=s.c.limiter){std::fill(s.ring,s.ring+RING,0.f);s.seq=0;s.head=s.tail=0;s.lim_gain=1;}
@@ -45,7 +48,7 @@ extern "C" __declspec(dllexport) int cm_configure(void* handle,const Config* val
 }
 extern "C" __declspec(dllexport) void* cm_create(){
     State* s=new(std::nothrow) State;if(!s)return nullptr;s->noise=rnnoise_create(nullptr);if(!s->noise){delete s;return nullptr;}
-    Config c{1,1,1,1,70,-20,2,6,10,150,0,0,0,-1,0,1};
+    Config c{1,1,1,1,70,-20,2,6,10,150,0,0,0,-1,0,1,90};
     if(cm_configure(s,&c)){rnnoise_destroy(s->noise);delete s;return nullptr;}return s;
 }
 extern "C" __declspec(dllexport) void cm_destroy(void* handle){if(handle){State* s=(State*)handle;rnnoise_destroy(s->noise);cm_level_destroy(s->leveler);delete s;}}
@@ -56,9 +59,17 @@ extern "C" __declspec(dllexport) int cm_process(void* handle,const float* input,
     for(unsigned i=0;i<n;i++){
         if(!std::isfinite(input[i]))return -2;ip=std::max(ip,std::abs(input[i]));if(std::abs(input[i])>=.999f)clips++;
         double x=input[i]*ing;if(s.c.highpass)x=s.hp.process(x);s.input[i]=(float)(x*32768.0);
+        if(s.c.noise){s.dry[i]=s.original[s.original_index];s.original[s.original_index]=s.input[i];s.original_index=(s.original_index+1)%960;}
     }
     float vad=0;
     if(s.c.noise)vad=rnnoise_process_frame(s.noise,s.denoised,s.input);else std::copy(s.input,s.input+n,s.denoised);
+    if(s.c.noise){
+        const float target=s.c.noise_strength/100.f;
+        for(unsigned i=0;i<n;i++){
+            s.noise_mix+=std::clamp(target-s.noise_mix,-1.f/960,1.f/960);
+            s.denoised[i]=s.dry[i]+s.noise_mix*(s.denoised[i]-s.dry[i]);
+        }
+    }
     float automatic_gain=s.c.auto_level?cm_level_process(s.leveler,s.denoised):0;
     for(unsigned i=0;i<n;i++){
         double x=s.denoised[i]/32768.0;if(std::abs(s.c.presence_db)>.001)x=s.eq.process(x);

@@ -5,7 +5,7 @@ import sounddevice as sd
 import soundfile as sf
 from clear_mic.paths import initialize,DATA
 from clear_mic.settings import Voice,PRESETS,load,save,voice_from
-from clear_mic.audio_service import AudioService,devices,resolve,record_preview,process_clip,com_apartment
+from clear_mic.audio_service import AudioService,devices,resolve,record_preview,process_clip,match_preview_level,com_apartment
 from clear_mic.processor import RATE
 from clear_mic.echo import physical_speaker
 
@@ -18,12 +18,14 @@ class Backend:
         if not isinstance(stored_voice,dict):stored_voice={}
         try:voice=voice_from(stored_voice)
         except (ValueError,TypeError,AttributeError):voice=Voice()
+        if stored_voice and 'noise_strength' not in stored_voice:voice.noise_strength=100
         self.settings={'input':stored.get('input',''),'output':stored.get('output',''),'listen':stored.get('listen',''),'voice':asdict(voice),'preset':stored.get('preset','Natural speech'),'auto_start':bool(stored.get('auto_start',False)),'minimize_to_tray':bool(stored.get('minimize_to_tray',True))}
         self.settings['created_device_selected']=bool(stored.get('created_device_selected',False))
         self.settings['echo_cancel']=bool(stored.get('echo_cancel',False));self.settings['speakers']=stored.get('speakers','')
+        self.settings['preview_match']=bool(stored.get('preview_match',True))
         # Upgrade shipped presets without overwriting custom tuning.
         if not isinstance(self.settings['preset'],str):self.settings['preset']='Natural speech'
-        if 'auto_level' not in stored_voice and self.settings['preset'] in PRESETS:
+        if ('auto_level' not in stored_voice or 'noise_strength' not in stored_voice) and self.settings['preset'] in PRESETS:
             self.settings['voice']=asdict(PRESETS[self.settings['preset']])
         self.inventory={};self.refresh()
     def emit(self,value):
@@ -52,7 +54,7 @@ class Backend:
             if key in value:
                 if not isinstance(value[key],str):raise ValueError('Invalid device or preset')
                 result[key]=value[key]
-        for key in ('auto_start','minimize_to_tray','echo_cancel'):
+        for key in ('auto_start','minimize_to_tray','echo_cancel','preview_match'):
             if key in value:result[key]=bool(value[key])
         if (self.service.active or self.busy) and any(result[k]!=self.settings[k] for k in ('input','output','speakers','echo_cancel')):raise ValueError('Stop the microphone or finish recording before changing routing or speaker echo cancellation.')
         if result['echo_cancel'] and not physical_speaker(result['speakers']):raise ValueError('Choose your physical speakers for echo cancellation.')
@@ -91,8 +93,10 @@ class Backend:
         elif action=='play':
             if self.preview is None or self.busy or self.service.active:raise ValueError('Record a preview and stop the live microphone first.')
             if value not in ('original','processed'):raise ValueError('Invalid playback mode')
-            if value=='processed' and self.settings['echo_cancel'] and self.preview_reference is None:raise ValueError('Record a new preview with speaker echo cancellation enabled.')
-            audio=process_clip(self.preview,voice_from(self.settings['voice']),self.preview_reference if self.settings['echo_cancel'] else None) if value=='processed' else self.preview
+            needs_processed=value=='processed' or self.settings['preview_match']
+            if needs_processed and self.settings['echo_cancel'] and self.preview_reference is None:raise ValueError('Record a new preview with speaker echo cancellation enabled.')
+            processed=process_clip(self.preview,voice_from(self.settings['voice']),self.preview_reference if self.settings['echo_cancel'] else None) if needs_processed else None
+            audio=processed if value=='processed' else match_preview_level(self.preview,processed) if self.settings['preview_match'] else self.preview
             sd.stop();sd.play(audio,samplerate=RATE,device=resolve(self.settings['listen'],'output'),extra_settings=sd.WasapiSettings(auto_convert=True));result=True
         elif action=='stop_playback':sd.stop();result=True
         elif action=='quit':self.emit({'id':message.get('id'),'result':True});return False

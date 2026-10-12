@@ -2,7 +2,7 @@
 
 A local Windows voice microphone app. Clear Mic combines RNNoise, WebRTC automatic volume, optional speaker echo cancellation, gentle compression and a peak limiter. No account, subscription, cloud inference, or GPU is required.
 
-Version 1.3 adds speech-aware automatic volume and WebRTC AEC3 with a stereo speaker reference. The app can create a dedicated Windows virtual microphone. The Electron interface and native audio process run locally; the interface uses software rendering and pauses meter updates when hidden in the tray.
+Version 1.4 preserves the unmodified voice through the echo stage while speakers are quiet, adds adjustable noise strength, and matches preview loudness for easier listening comparisons. The app can create a dedicated Windows virtual microphone. The Electron interface and native audio process run locally; the interface uses software rendering and pauses meter updates when hidden in the tray.
 
 ## Download and use
 
@@ -32,7 +32,7 @@ The default **Natural speech** preset is intentionally gentle:
 | Input trim | 0 dB |
 | Speaker echo cancellation | Optional WebRTC AEC3, physical 48 kHz stereo playback reference |
 | High-pass rumble reduction | 70 Hz, second-order |
-| Noise removal | RNNoise, 48 kHz mono |
+| Noise removal | RNNoise, 48 kHz mono, 90% strength |
 | Automatic volume | WebRTC AGC2; 18 dB maximum boost, speech/noise safeguards |
 | Presence EQ | Neutral; adjustable ±3 dB at 2.8 kHz |
 | Compressor | RMS detector, −20 dB threshold, 2:1 ratio, 6 dB soft knee |
@@ -41,11 +41,11 @@ The default **Natural speech** preset is intentionally gentle:
 | Output trim | 0 dB |
 | Limiter | −1 dB sample-peak ceiling, 2 ms lookahead, 80 ms release |
 
-Use **Even speech** for more level control or **Noise removal only** to hear RNNoise without voice shaping. High-pass, automatic volume, compression, and limiting can be disabled independently. Sliders and presets apply while audio is running. Automatic volume settles over several seconds and does not change the Windows or hardware microphone gain. Existing custom tuning is retained; shipped presets are upgraded to the new defaults.
+**Noise strength** trades isolation for voice detail. Natural speech uses 90%; lower it if speech sounds overprocessed, or use 100% for the previous maximum RNNoise suppression. A lower strength also lets through more keyboard/background noise. The original and denoised paths are aligned to the same 20 ms RNNoise delay; this control adds no extra delay. Use **Even speech** for more level control or **Noise removal only** to hear RNNoise without voice shaping. High-pass, automatic volume, compression, and limiting can be disabled independently. Sliders and presets apply while audio is running. Automatic volume settles over several seconds and does not change the Windows or hardware microphone gain. Existing custom tuning is retained; shipped presets are upgraded to the new defaults.
 
 The limiter protects digital output peaks; it is not an oversampled intersample true-peak limiter. A microphone that clips before software processing needs lower hardware gain. No gate is added, so quiet word beginnings are not deliberately cut by another threshold stage.
 
-On the Voice page, **Record 5 seconds** captures only after pressing the button. Compare **Original** and **Processed** on the playback device selected in Settings. Replaying Processed uses the current settings. With echo cancellation enabled, the preview also captures a speaker reference that stays in memory; the saved files contain only original/processed microphone audio. Record a new preview if enabling AEC after an ordinary preview. Stop live routing before preview recording. Short preview recordings and settings stay under `%LOCALAPPDATA%\ClearMic`; live audio is never saved. Open that folder from Settings to inspect or delete previews.
+On the Voice page, **Record 5 seconds** captures only after pressing the button. Compare **Original** and **Processed** on the playback device selected in Settings. Replaying Processed uses the current settings. **Match comparison volume** adjusts Original playback to the processed speech level, subject to a peak ceiling and 18 dB gain cap; switch it off to hear the microphone's actual input level. It does not alter saved recordings or the live microphone. With echo cancellation enabled, the preview also captures a speaker reference that stays in memory; the saved files contain only original/processed microphone audio. Record a new preview if enabling AEC after an ordinary preview. Stop live routing before preview recording. Short preview recordings and settings stay under `%LOCALAPPDATA%\ClearMic`; live audio is never saved. Open that folder from Settings to inspect or delete previews.
 
 ## Latency and performance
 

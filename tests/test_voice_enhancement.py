@@ -4,7 +4,7 @@ from unittest.mock import patch
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
-from clear_mic.audio_service import open_route,process_clip
+from clear_mic.audio_service import open_route,process_clip,match_preview_level
 from clear_mic.echo import EchoCanceller,physical_speaker
 from clear_mic.processor import Processor,FRAME,RATE
 from clear_mic.settings import Voice,PRESETS
@@ -45,9 +45,19 @@ class EnhancementTests(unittest.TestCase):
         self.assertGreater(db(rms(mic[-RATE*2:])/rms(output[-RATE*2:])),20)
         self.assertTrue(np.isfinite(output).all())
     def test_echo_canceller_preserves_near_end_without_playback(self):
-        voice=speech(3)*.1;output,_=echo_run(voice,np.zeros((len(voice),2),np.float32))
-        self.assertGreater(db(rms(output[RATE:])/rms(voice[RATE:])), -2)
-        self.assertLess(db(rms(output[RATE:])/rms(voice[RATE:])),2)
+        voice=np.random.default_rng(34).uniform(-.1,.1,RATE*3).astype(np.float32)
+        output,_=echo_run(voice,np.zeros((len(voice),2),np.float32))
+        np.testing.assert_array_equal(output[430:],voice[:-430])
+        self.assertTrue(np.all(output[:430]==0))
+    def test_echo_returns_to_transparent_voice_after_playback_tail(self):
+        rng=np.random.default_rng(35);voice=speech(4)*.1
+        reference=np.zeros((len(voice),2),np.float32);reference[:RATE*2]=rng.normal(0,.04,(RATE*2,2))
+        output,_=echo_run(voice,reference)
+        np.testing.assert_array_equal(output[RATE*3:],voice[RATE*3-430:-430])
+    def test_inaudibly_quiet_playback_does_not_process_voice(self):
+        voice=speech(2)*.1;reference=np.full((len(voice),2),.002,np.float32)
+        output,_=echo_run(voice,reference)
+        np.testing.assert_array_equal(output[430:],voice[:-430])
     def test_double_talk_retains_near_end_during_playback(self):
         rng=np.random.default_rng(7);reference=rng.normal(0,.04,(RATE*10,2)).astype(np.float32)
         echo=np.zeros(RATE*10,np.float32);echo[2400:]=.5*reference[:-2400,0]
@@ -67,7 +77,42 @@ class EnhancementTests(unittest.TestCase):
         with self.assertRaises(ValueError):p.process(mic,reference,np.empty_like(mic))
     def test_virtual_playback_is_not_a_speaker_reference(self):
         self.assertFalse(physical_speaker('Speakers (Clear Mic (VB-Audio Virtual Cable))'))
+        self.assertFalse(physical_speaker('Speakers (Steam Streaming Speakers)'))
         self.assertTrue(physical_speaker('Speakers (USB Audio)'))
+    def test_zero_noise_strength_keeps_voice_and_its_fixed_timeline(self):
+        raw=np.random.default_rng(36).uniform(-.1,.1,RATE).astype(np.float32)
+        voice=Voice(highpass=0,compressor=0,limiter=0,auto_level=0,noise_strength=0)
+        output=process_clip(raw,voice)
+        np.testing.assert_allclose(output,raw,atol=1e-7)
+    def test_natural_strength_still_reduces_stationary_background_noise(self):
+        raw=np.random.default_rng(37).normal(0,.006,RATE*4).astype(np.float32)
+        voice=Voice(highpass=0,compressor=0,limiter=0,auto_level=0,noise_strength=90)
+        output=process_clip(raw,voice)
+        self.assertGreater(db(rms(raw[-RATE:])/rms(output[-RATE:])),12)
+    def test_voice_detail_control_does_not_shift_consonant_timing(self):
+        raw=np.zeros(RATE,np.float32);raw[RATE//2:RATE//2+12]=.1
+        for strength in (0,75,90,100):
+            voice=Voice(highpass=0,compressor=0,limiter=0,auto_level=0,noise_strength=strength)
+            output=process_clip(raw,voice)
+            self.assertTrue(np.isfinite(output).all())
+            if strength<100:self.assertLess(abs(int(np.argmax(np.abs(output)))-RATE//2),12)
+    def test_noise_strength_rejects_invalid_values(self):
+        for value in (-1,101,float('nan')):
+            with self.assertRaises(ValueError):Voice(noise_strength=value).validate()
+    def test_preview_matching_uses_speech_not_suppressed_background(self):
+        raw=np.full(RATE*3,.0005,np.float32);raw[RATE:RATE*2]=speech(1)*.04
+        processed=raw.copy();processed[:RATE]=0;processed[RATE*2:]=0;processed[RATE:RATE*2]*=2
+        matched=match_preview_level(raw,processed)
+        self.assertAlmostEqual(rms(matched[RATE:RATE*2])/rms(processed[RATE:RATE*2]),1,places=5)
+        np.testing.assert_array_equal(processed[:RATE],np.zeros(RATE,np.float32))
+    def test_preview_matching_respects_peak_ceiling(self):
+        raw=np.full(RATE,.001,np.float32);raw[RATE//2]=.9
+        matched=match_preview_level(raw,raw*8)
+        self.assertLessEqual(float(np.max(np.abs(matched))),10**(-1/20)+1e-6)
+    def test_preview_matching_keeps_silence_and_final_partial_frame(self):
+        for count in (17,FRAME+17):
+            raw=np.zeros(count,np.float32)
+            np.testing.assert_array_equal(match_preview_level(raw,raw),raw)
     def test_noise_only_preset_has_no_automatic_gain(self):
         self.assertEqual(PRESETS['Noise removal only'].auto_level,0)
     def test_owned_cable_can_use_compatible_feed(self):

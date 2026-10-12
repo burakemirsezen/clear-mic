@@ -1,7 +1,7 @@
 {
   "name": "clear-mic",
   "productName": "Clear Mic",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "A local voice microphone app",
   "main": "main.cjs",
   "private": true,
