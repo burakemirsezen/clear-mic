@@ -1,6 +1,6 @@
 # Voice processing decisions
 
-Clear Mic 1.4 retains RNNoise and adds WebRTC AGC2 and optional AEC3. This is a practical CPU baseline for a Windows speech microphone. It has not been shown to outperform Discord in a matched listening test.
+Clear Mic 1.5 retains RNNoise and adds WebRTC AGC2 and optional AEC3. This is a practical CPU baseline for a Windows speech microphone. It has not been shown to outperform Discord in a matched listening test.
 
 ## Preserve speech detail
 
@@ -9,6 +9,12 @@ Version 1.4 adds a time-aligned original/denoised blend. Natural speech uses 90%
 This is an engineering adaptation of a common attenuation-limit approach: [DeepFilterNet's implementation](https://github.com/Rikorose/DeepFilterNet/blob/v0.5.6/libDF/src/tract.rs) limits attenuation by mixing the original and enhanced spectra. Clear Mic uses an aligned time-domain blend with RNNoise instead. [DeepFilterNet research](https://arxiv.org/abs/2305.08227) makes it a candidate for a future model comparison; that model is not bundled here and no quality claim is transferred from its paper to this app.
 
 Noise suppression, automatic gain and echo suppression must be assessed separately. The preview's optional loudness matching raises or lowers Original to the processed speech RMS using the same active regions, bounded by a sample-peak ceiling and 18 dB gain cap. Saved recordings and the actual live stream are unchanged. Loudness matching is approximate, not a perceptual loudness standard.
+
+## Singing
+
+RNNoise's [original paper](https://arxiv.org/abs/1709.08243) addresses speech enhancement; it does not establish faithful singing reconstruction. Clear Mic therefore does not treat the speech preset as a general vocal recording chain. [RFC 7874 section 4](https://www.rfc-editor.org/rfc/rfc7874.html#section-4) recommends manual rather than automatic gain for music applications. Our Singing preset is an engineering application of that principle: AGC2, RNNoise and compression start disabled; input trim remains manual, with a 40 Hz high-pass and −1 dBFS sample-peak limiter. Optional compression is prepared at 1.5:1, 25 ms attack and 250 ms release. No speech gate or speech-confidence rule determines whether a note survives.
+
+The existing physical-speaker AEC reference can include PC backing music. This can reduce playback bleed but is not blind source separation or perfect stem extraction. AEC3 is built for communication audio and still requires a listening check for sustained singing during loud accompaniment. The Singing preset does not change the selected speaker endpoint or the AEC toggle. External music without a captured reference cannot be reliably subtracted; background noise remains when RNNoise is off. The preset has synthetic sustained-note/vibrato, level-dynamics and timing regressions, not a human singing quality benchmark.
 
 ## Volume
 

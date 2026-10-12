@@ -98,6 +98,7 @@ for(const [name,label] of Object.entries(stageNames)) {
 function updatePresets() {
   document.querySelectorAll('.preset-card').forEach(card=>{const selected=card.dataset.preset===state.settings.preset;card.classList.toggle('selected',selected);card.setAttribute('aria-pressed',String(selected));});
   $('current-preset').textContent=$('voice-preset-badge').textContent=state.settings.preset;
+  $('voice-guidance').textContent=state.settings.preset==='Singing'?'Singing preserves sustained notes and dynamics: speech noise removal, automatic volume and compression start off. Use Input trim for a fixed level. Speaker echo cancellation can remove backing tracks played by your selected PC speakers.':'Lower Noise strength for more voice detail; raise it to remove more keyboard and background sound. Natural speech starts at 90%. Automatic volume settles over a few seconds.';
 }
 function updateChain() {
   $('chain-stages').replaceChildren();
@@ -183,7 +184,7 @@ async function boot() {
   try {
     const data=await appAction('boot');Object.assign(state,{settings:data.settings,devices:data.devices,presets:data.presets,previewReady:data.preview_ready,ready:true,driver:data.virtual_device});
     $('version').textContent=data.version;$('launch-login').checked=data.launch_at_login;
-    const descriptions={'Natural speech':'Gentle shaping. Your voice, just cleaner.','Even speech':'A steadier level for animated conversations.','Noise removal only':'Keep your mic character. Remove the noise.'};
+    const descriptions={'Natural speech':'Gentle shaping. Your voice, just cleaner.','Even speech':'A steadier level for animated conversations.','Singing':'Preserve held notes, tone and dynamics.','Noise removal only':'Keep your mic character. Remove the noise.'};
     for(const name of Object.keys(state.presets)) {
       const card=document.createElement('button');card.className='preset-card';card.dataset.preset=name;
       const title=document.createElement('span');title.className='preset-name';title.textContent=name;
@@ -213,6 +214,9 @@ window.runUiChecks=async()=>{
   const levelSaved=(await call('snapshot')).settings.voice.auto_level===0;
   const speakerControls=Boolean($('speaker-device')&&$('echo-cancel'));
   document.querySelector('[data-preset="Even speech"]').click();await saveChain;const presetSaved=(await call('snapshot')).settings.preset==='Even speech';
+  document.querySelector('[data-preset="Singing"]').click();await saveChain;
+  const singing=(await call('snapshot')).settings;
+  const singingSaved=singing.preset==='Singing'&&singing.voice.noise===0&&singing.voice.auto_level===0&&singing.voice.compressor===0&&singing.voice.limiter===1;
   state.settings=initial;renderSettings();await saveSettings();
   const originalDriver=state.driver;
   state.driver={installed:false,foreign_vbcable:false,endpoints:[]};updateDriver();updateStatus();
@@ -222,6 +226,6 @@ window.runUiChecks=async()=>{
   const foreignProtected=$('create-device').disabled;
   state.driver=originalDriver;updateDriver();updateStatus();
   const sizes=window.checkLayout();
-  return {pass:savedSlider&&noiseStrengthSaved&&comparisonSaved&&levelSaved&&speakerControls&&presetSaved&&setupVisible&&foreignProtected&&[...sizes,...setupPages].every(s=>s.noHorizontalOverflow&&s.contentVisible),savedSlider,noiseStrengthSaved,comparisonSaved,levelSaved,speakerControls,presetSaved,setupVisible,foreignProtected,setupPages,pages:sizes,audioStatus:state.stats.status,previewRecorded:state.previewReady};
+  return {pass:savedSlider&&noiseStrengthSaved&&comparisonSaved&&levelSaved&&speakerControls&&presetSaved&&singingSaved&&setupVisible&&foreignProtected&&[...sizes,...setupPages].every(s=>s.noHorizontalOverflow&&s.contentVisible),savedSlider,noiseStrengthSaved,comparisonSaved,levelSaved,speakerControls,presetSaved,singingSaved,setupVisible,foreignProtected,setupPages,pages:sizes,audioStatus:state.stats.status,previewRecorded:state.previewReady};
 };
 boot();

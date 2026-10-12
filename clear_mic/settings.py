@@ -30,7 +30,7 @@ class Voice:
             setattr(self,name,value)
         for name in ('noise','highpass','compressor','limiter','auto_level'):setattr(self,name,int(bool(getattr(self,name))))
         return self
-PRESETS={'Natural speech':Voice(),'Even speech':Voice(threshold_db=-20,ratio=3,makeup_db=1,highpass_hz=80,presence_db=1),'Noise removal only':Voice(highpass=0,compressor=0,limiter=0,auto_level=0,noise_strength=100)}
+PRESETS={'Natural speech':Voice(),'Even speech':Voice(threshold_db=-20,ratio=3,makeup_db=1,highpass_hz=80,presence_db=1),'Singing':Voice(noise=0,auto_level=0,compressor=0,highpass_hz=40,threshold_db=-18,ratio=1.5,attack_ms=25,release_ms=250,noise_strength=75),'Noise removal only':Voice(highpass=0,compressor=0,limiter=0,auto_level=0,noise_strength=100)}
 def load():
     try:return json.loads((DATA/'settings.json').read_text(encoding='utf-8'))
     except (OSError,ValueError):return {}

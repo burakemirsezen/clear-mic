@@ -2,7 +2,7 @@
 
 A local Windows voice microphone app. Clear Mic combines RNNoise, WebRTC automatic volume, optional speaker echo cancellation, gentle compression and a peak limiter. No account, subscription, cloud inference, or GPU is required.
 
-Version 1.4 preserves the unmodified voice through the echo stage while speakers are quiet, adds adjustable noise strength, and matches preview loudness for easier listening comparisons. The app can create a dedicated Windows virtual microphone. The Electron interface and native audio process run locally; the interface uses software rendering and pauses meter updates when hidden in the tray.
+Version 1.5 adds a dedicated Singing preset. It also preserves the unmodified voice through the echo stage while speakers are quiet, adds adjustable noise strength, and matches preview loudness for easier listening comparisons. The app can create a dedicated Windows virtual microphone. The Electron interface and native audio process run locally; the interface uses software rendering and pauses meter updates when hidden in the tray.
 
 ## Download and use
 
@@ -42,6 +42,10 @@ The default **Natural speech** preset is intentionally gentle:
 | Limiter | −1 dB sample-peak ceiling, 2 ms lookahead, 80 ms release |
 
 **Noise strength** trades isolation for voice detail. Natural speech uses 90%; lower it if speech sounds overprocessed, or use 100% for the previous maximum RNNoise suppression. A lower strength also lets through more keyboard/background noise. The original and denoised paths are aligned to the same 20 ms RNNoise delay; this control adds no extra delay. Use **Even speech** for more level control or **Noise removal only** to hear RNNoise without voice shaping. High-pass, automatic volume, compression, and limiting can be disabled independently. Sliders and presets apply while audio is running. Automatic volume settles over several seconds and does not change the Windows or hardware microphone gain. Existing custom tuning is retained; shipped presets are upgraded to the new defaults.
+
+**Singing** preserves held notes and vocal dynamics by starting with speech noise suppression, automatic volume and compression off. It keeps a gentle 40 Hz rumble cut, neutral EQ and the peak limiter. Set a fixed **Input trim** in Settings if needed, and retain headroom for louder notes. Compression can be enabled manually; the preset prepares a gentle 1.5:1 ratio with 25 ms attack and 250 ms release.
+
+For a backing track played on this PC, keep **Speaker echo cancellation** on and select the physical speakers playing that track. AEC uses their playback reference to reduce bleed; it is not general music/vocal source separation, and separation is imperfect during simultaneous singing and playback. Music from a phone, external instrument, or another uncaptured source may still enter the microphone. With noise removal off, room/background noise is retained; enabling RNNoise may damage held notes or quiet singing because it is designed for speech. With headphones, AEC can be off as well, giving the Singing preset only the limiter's 2 ms DSP lookahead plus device buffers.
 
 The limiter protects digital output peaks; it is not an oversampled intersample true-peak limiter. A microphone that clips before software processing needs lower hardware gain. No gate is added, so quiet word beginnings are not deliberately cut by another threshold stage.
 

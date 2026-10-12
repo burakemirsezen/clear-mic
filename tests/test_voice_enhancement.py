@@ -113,6 +113,40 @@ class EnhancementTests(unittest.TestCase):
         for count in (17,FRAME+17):
             raw=np.zeros(count,np.float32)
             np.testing.assert_array_equal(match_preview_level(raw,raw),raw)
+    def test_singing_does_not_depend_on_speech_detection(self):
+        voice=PRESETS['Singing']
+        self.assertEqual((voice.noise,voice.auto_level,voice.compressor,voice.limiter),(0,0,0,1))
+    def test_singing_retains_low_and_high_held_notes(self):
+        for frequency in (65,110,440,880):
+            raw=(.1*np.sin(2*np.pi*frequency*np.arange(RATE*2)/RATE)).astype(np.float32)
+            output=process_clip(raw,PRESETS['Singing'])
+            change=db(rms(output[RATE:-FRAME])/rms(raw[RATE:-FRAME]))
+            self.assertGreater(change,-.8);self.assertLess(abs(change),.8)
+    def test_singing_keeps_vibrato_and_deliberate_volume_changes(self):
+        t=np.arange(RATE*4)/RATE;frequency=220+5*np.sin(2*np.pi*5*t)
+        raw=np.asarray(np.sin(np.cumsum(2*np.pi*frequency/RATE)),np.float32)
+        raw[:RATE*2]*=.04;raw[RATE*2:]*=.1
+        output=process_clip(raw,PRESETS['Singing'])
+        self.assertGreater(float(np.corrcoef(raw[RATE:-FRAME],output[RATE:-FRAME])[0,1]),.96)
+        ratio=rms(output[RATE*3:-FRAME])/rms(output[RATE:RATE*2-FRAME])
+        self.assertAlmostEqual(ratio,2.5,delta=.05)
+    def test_singing_preview_keeps_consonant_onset_without_rnnoise_delay(self):
+        raw=np.zeros(RATE,np.float32);raw[RATE//2]=.1
+        output=process_clip(raw,PRESETS['Singing'])
+        self.assertEqual(int(np.argmax(np.abs(output))),RATE//2)
+    def test_singing_over_referenced_backing_chords_retains_vocal(self):
+        # Deterministic musical double-talk stress case, not a perceptual score.
+        t=np.arange(RATE*12)/RATE;reference=np.empty((len(t),2),np.float32)
+        reference[:,0]=.02*sum(np.sin(2*np.pi*f*t) for f in (261.63,329.63,392))
+        reference[:,1]=.02*sum(np.sin(2*np.pi*f*t) for f in (196,246.94,293.66))
+        echo=np.zeros(len(t),np.float32);echo[2400:]=reference[:-2400,0]*.5;echo[3100:]+=reference[:-3100,1]*.2
+        phase=np.cumsum(2*np.pi*(220+5*np.sin(2*np.pi*5*t))/RATE)
+        near=np.asarray(.07*np.sin(phase)+.02*np.sin(phase*2)+.01*np.sin(phase*3),np.float32);near[:RATE*4]=0
+        residual,_=echo_run(echo,reference);mixed,_=echo_run(echo+near,reference)
+        baseline,_=echo_run(near,np.zeros_like(reference));a=baseline[-RATE*2:];b=(mixed-residual)[-RATE*2:]
+        self.assertGreater(db(rms(echo[-RATE*2:])/rms(residual[-RATE*2:])),20)
+        self.assertGreater(db(rms(b)/rms(a)),-3)
+        self.assertGreater(float(np.corrcoef(a,b)[0,1]),.9)
     def test_noise_only_preset_has_no_automatic_gain(self):
         self.assertEqual(PRESETS['Noise removal only'].auto_level,0)
     def test_owned_cable_can_use_compatible_feed(self):
