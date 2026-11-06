@@ -1,0 +1,4 @@
+https://github.com/localai-org/LocalVQE.git
+LocalVQE 7f61cd05095d42e56a135b303f5bb4d761da22b9
+GGML c044a8eeae2591faa0950c8b5e514cbc4bbfc4ca
+CPU AVX2; native diagnostics redirected to stderr; persistent above-normal CPU worker pools with no idle polling; preserve higher audio-thread priority. Models: neural.lock.json

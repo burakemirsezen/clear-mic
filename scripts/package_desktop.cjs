@@ -3,7 +3,7 @@ const root = path.resolve(__dirname, '..');
 const { version } = require('../desktop/package.json');
 import('../desktop/node_modules/@electron/packager/dist/index.js').then(({ packager }) => packager({
   dir: path.join(root, 'desktop'), name: 'ClearMic', appVersion: version, platform: 'win32', arch: 'x64',
-  out: path.join(root, 'dist'), overwrite: true, asar: true, prune: true,
+  out: process.env.CLEARMIC_BUILD_DIR || path.join(root, 'dist'), overwrite: true, asar: true, prune: true,
   icon: path.join(root, 'assets', 'clear-mic.ico'),
   extraResource: [path.join(root, 'dist', 'ClearMicAudio'), path.join(root, 'assets'), path.join(root, 'THIRD_PARTY'), path.join(root,'vendor','ClearMicDeviceSetup.exe'), path.join(root,'vendor','vbcable')],
   ignore: [/[\\/](?:node_modules|\.test)(?:[\\/]|$)/],

@@ -7,7 +7,9 @@ def physical_speaker(name):
     return bool(name) and not any(w in name.lower() for w in ('clear mic','virtual','cable','voicemeeter','streaming microphone','streaming speakers'))
 
 class EchoCanceller:
-    def __init__(self):
+    # Measured AEC3 split-band/processing impulse delay at the fixed 48 kHz rate.
+    latency_samples=430
+    def __init__(self,preserve_voice=True,tuning=None):
         self.lib=C.CDLL(str(ROOT/'vendor/cm_aec3.dll'))
         self.lib.cm_echo_create.argtypes=[];self.lib.cm_echo_create.restype=C.c_void_p
         self.lib.cm_echo_destroy.argtypes=[C.c_void_p];self.lib.cm_echo_destroy.restype=None
@@ -15,28 +17,47 @@ class EchoCanceller:
         self.lib.cm_echo_metrics.argtypes=[C.c_void_p,FP];self.lib.cm_echo_metrics.restype=None
         self.lib.cm_echo_render.argtypes=[C.c_void_p,FP];self.lib.cm_echo_render.restype=C.c_int
         self.lib.cm_echo_capture.argtypes=[C.c_void_p,FP,FP,C.c_int];self.lib.cm_echo_capture.restype=C.c_int
-        self.state=self.lib.cm_echo_create();self.metrics=np.zeros(3,np.float32)
+        if tuning is not None:
+            # (filter_blocks, split_upper_bands, upper_band_natural_voice) for measurements.
+            self.lib.cm_echo_create_tuned.argtypes=[C.c_int]*4;self.lib.cm_echo_create_tuned.restype=C.c_void_p
+            self.state=self.lib.cm_echo_create_tuned(int(preserve_voice),*map(int,tuning))
+        elif preserve_voice:self.state=self.lib.cm_echo_create()
+        else:
+            self.lib.cm_echo_create_with_protection.argtypes=[C.c_int];self.lib.cm_echo_create_with_protection.restype=C.c_void_p
+            self.state=self.lib.cm_echo_create_with_protection(0)
+        self.metrics=np.zeros(3,np.float32)
         if not self.state:raise RuntimeError('Cannot initialize speaker echo cancellation')
-    def process(self,mic,reference,output):
+        self.silence=np.zeros((FRAME,2),np.float32)
+    @staticmethod
+    def _validate_frame(value,shape):
+        if not isinstance(value,np.ndarray) or value.dtype!=np.float32 or value.shape!=shape or not value.flags.c_contiguous:
+            raise ValueError('Echo cancellation needs contiguous float32 10 ms frames')
+    def _validate_capture(self,mic,output):
         if not self.state:raise RuntimeError('Echo canceller is closed')
-        for value,size in ((mic,FRAME),(reference,FRAME*2),(output,FRAME)):
-            if value.dtype!=np.float32 or value.size!=size or not value.flags.c_contiguous:raise ValueError('Echo cancellation needs contiguous float32 10 ms frames')
+        self._validate_frame(mic,(FRAME,));self._validate_frame(output,(FRAME,))
         if not output.flags.writeable:raise ValueError('Echo output must be writable')
-        if not np.isfinite(mic).all() or not np.isfinite(reference).all():raise ValueError('Nonfinite echo input')
+        if not np.isfinite(mic).all():raise ValueError('Nonfinite echo input')
+    def _validate_reference(self,reference):
+        self._validate_frame(reference,(FRAME,2))
+        if not np.isfinite(reference).all():raise ValueError('Nonfinite echo input')
+    def process(self,mic,reference,output):
+        self._validate_capture(mic,output);self._validate_reference(reference)
         if self.lib.cm_echo_process(self.state,mic.ctypes.data_as(FP),reference.ctypes.data_as(FP),output.ctypes.data_as(FP),0):raise RuntimeError('Echo cancellation failed')
         self.lib.cm_echo_metrics(self.state,self.metrics.ctypes.data_as(FP))
     def process_live(self,mic,reference,output):
+        # Reject invalid capture buffers before reading playback or advancing AEC.
+        self._validate_capture(mic,output)
         # Drain fresh playback blocks before the capture block. Independent hardware
         # clocks and Windows packet sizes need not yield exactly one render per capture.
         rendered=0;peak=0
         for _ in range(8):
             samples=reference.read()
             if not reference.active:break
+            self._validate_reference(samples)
             peak=max(peak,float(np.max(np.abs(samples))));rendered+=1
             if self.lib.cm_echo_render(self.state,samples.ctypes.data_as(FP)):raise RuntimeError('Speaker reference processing failed')
         if not rendered:
-            reference.samples.fill(0)
-            self.lib.cm_echo_render(self.state,reference.samples.ctypes.data_as(FP))
+            if self.lib.cm_echo_render(self.state,self.silence.ctypes.data_as(FP)):raise RuntimeError('Speaker reference processing failed')
         if self.lib.cm_echo_capture(self.state,mic.ctypes.data_as(FP),output.ctypes.data_as(FP),0):raise RuntimeError('Echo cancellation failed')
         self.lib.cm_echo_metrics(self.state,self.metrics.ctypes.data_as(FP))
         return peak

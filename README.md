@@ -1,8 +1,22 @@
 # Clear Mic
 
-A local Windows voice microphone app. Clear Mic combines RNNoise, WebRTC automatic volume, optional speaker echo cancellation, gentle compression and a peak limiter. No account, subscription, cloud inference, or GPU is required.
+A local Windows voice microphone app with neural or classic audio processing, optional speaker echo cancellation, an adjustable noise gate, automatic volume and peak protection. No account, subscription, cloud inference, or GPU is required.
 
-Version 1.5 adds a dedicated Singing preset. It also preserves the unmodified voice through the echo stage while speakers are quiet, adds adjustable noise strength, and matches preview loudness for easier listening comparisons. The app can create a dedicated Windows virtual microphone. The Electron interface and native audio process run locally; the interface uses software rendering and pauses meter updates when hidden in the tray.
+Version 2.0 fixes voice muffling while music or game audio plays through speakers. WebRTC AEC3 at 48 kHz only subtracts echo below 8 kHz; above that it scaled the whole 8–24 kHz range by its deepest 4–8 kHz suppression gain, removing consonants and air from the voice whenever playback was present. Clear Mic now runs a separate AEC3 instance on each upper band (8–16 and 16–24 kHz), each with its own adaptive filter and per-frequency suppression. With a real song through a simulated desk speaker and room (`scripts/measure_playback.py`), 8.5–18 kHz voice retention improved from −26/−34 dB to −7.5/−10.6 dB at the same music removal (~37 dB), for about 0.25 ms extra CPU per 10 ms frame. Speaker echo cancellation is now on by default, as in Discord, and is switched on once for existing installs that have physical speakers. It is safe with headphones.
+
+Version 1.9.1 adds faster cached preview comparisons, tracks the microphone/speaker reference used for each preview, and separates fixed DSP delay from frame compute time in the live meters. Invalid audio frames are rejected before they can affect later sound. The 1.9 voice model and sound defaults are unchanged.
+
+Version 1.9 replaces the earlier 16 kHz neural engines with **Full-band cleanup · 48 kHz**. The old path removed voice detail above 8 kHz and could sound muffled. The new path runs DPDFNet-2 at the original 48 kHz, starts at a gentler 65% strength, and keeps stereo WebRTC speaker echo cancellation. All inference stays on the CPU locally. The Electron interface uses software rendering and pauses meters while hidden.
+
+## Choose voice quality
+
+On **Voice → Voice engine**, use **Full-band cleanup · 48 kHz** for speech. With speakers, enable **Speaker echo cancellation**, choose the device actually playing your music/game, and start with **Natural voice** echo mode. The adaptive echo canceller learns how speaker playback reaches the microphone; full-band noise removal follows it. With headphones, leave echo cancellation off.
+
+**Noise strength** starts at 65%. Lower it for more voice detail or raise it for more isolation. Processed and original audio are delayed by the same amount before mixing, preventing hollow comb-filter coloration. RNNoise is bypassed in this engine to avoid stacking two noise models. Rumble cut, optional gate, automatic volume, EQ, compression and limiting remain available. Presets change those shaping controls and reset full-band strength to 65%; they keep the chosen engine. For singing, compare **Classic** with the **Singing** preset, which disables speech noise reduction.
+
+Stop the microphone before switching engines. Earlier neural profiles migrate to Full-band cleanup; explicitly saved Classic profiles stay Classic. The five-second preview can be replayed with current settings and matched comparison volume. Unchanged comparisons reuse the prepared audio, while changing processing settings recomputes it. Replaying Processed updates its saved WAV and records the settings alongside it, so the saved diagnostic matches what was played. The preview shows its recorded microphone; changing speakers requires a fresh recording for AEC comparisons. Speaker-reference audio remains in memory only.
+
+Full-band enhancement adds **50 ms fixed DSP delay**: 40 ms model delay plus 10 ms causal analysis framing. Speaker echo cancellation adds approximately 8.96 ms; peak protection adds 2 ms; the optional gate adds 5 ms. Default full-band speech with echo cancellation therefore has about **61 ms DSP delay**, or **66 ms with the gate**. This excludes Windows, audio-driver, Discord and network buffers. Frame processing time is measured separately in `scripts/measure_fullband.py`; it is not an end-to-end Discord latency measurement.
 
 ## Download and use
 
@@ -15,6 +29,8 @@ Download the Windows ZIP from this repository's **Releases**, extract the entire
 
 If using speakers, enable **Speaker echo cancellation** and choose the physical playback device actually playing your games/calls. Leave it off with headphones. Stop the microphone before changing those routing controls. AEC reduces playback leaking into the mic; it does not remove your own voice's room reflections.
 
+Keep **Echo mode → Natural voice** selected if your voice sounds robotic or muffled over music or game audio. It still subtracts the correlated speaker echo but preserves more voice detail instead of aggressively masking uncertain residuals. Some additional speaker bleed can remain, especially with loud or distorted playback. **Strong isolation** prioritizes suppression and can damage your voice during simultaneous playback. Existing installations default to Natural voice on upgrade. Both modes work in live routing and the five-second comparison preview; stop routing before switching modes.
+
 In your game, select **CABLE Output (Clear Mic (VB-Audio Virtual Cable))**. The app sends processed audio to **Speakers (Clear Mic (VB-Audio Virtual Cable))**. These are two ends of the newly created device. Setup restores the existing Windows playback and recording defaults if Windows selects the newly created cable; it reports a warning if restoration is unavailable. A restart may be required by Windows; Clear Mic never restarts the PC automatically.
 
 The microphone uses the unmodified, Microsoft-signed **VB-CABLE driver by VB-Audio**, bundled under the vendor's [distribution terms](https://vb-audio.com/Services/licensing.htm). VB-CABLE is proprietary donationware: it needs no subscription or cloud service, and [donations to its developer](https://vb-audio.com/Cable/) are welcome. The application source and RNNoise are open source; the bundled driver is not.
@@ -23,9 +39,11 @@ If ordinary VB-CABLE is already installed, Clear Mic preserves it and declines t
 
 The app starts stopped. Settings and device names are remembered. Close-to-tray keeps audio running; choose **Quit** from the tray or Settings to stop and exit. Automatic microphone start and Windows sign-in launch are optional settings, both off by default. Keep the extracted app folder in a stable location before enabling sign-in launch.
 
+If a saved device is unplugged, Clear Mic keeps that selection instead of switching to another device. Reconnect it and press **Refresh devices**, or explicitly choose a replacement. Starting is blocked in the interface while a required endpoint is unavailable; automatic start also fails without substituting another microphone. Unexpected stream interruptions show an error with recovery steps. Preview recording remains available when only the virtual output is missing. Preview playback in Settings lists speakers and headphones; an older saved virtual playback choice must be replaced before listening.
+
 ## Speech controls
 
-The default **Natural speech** preset is intentionally gentle:
+The **Classic** engine's default **Natural speech** preset is intentionally gentle:
 
 | Stage | Default |
 |---|---|
@@ -33,6 +51,7 @@ The default **Natural speech** preset is intentionally gentle:
 | Speaker echo cancellation | Optional WebRTC AEC3, physical 48 kHz stereo playback reference |
 | High-pass rumble reduction | 70 Hz, second-order |
 | Noise removal | RNNoise, 48 kHz mono, 90% strength |
+| Noise gate | Off; optional −45 dBFS threshold, 150 ms hold, 120 ms release |
 | Automatic volume | WebRTC AGC2; 18 dB maximum boost, speech/noise safeguards |
 | Presence EQ | Neutral; adjustable ±3 dB at 2.8 kHz |
 | Compressor | RMS detector, −20 dB threshold, 2:1 ratio, 6 dB soft knee |
@@ -43,21 +62,25 @@ The default **Natural speech** preset is intentionally gentle:
 
 **Noise strength** trades isolation for voice detail. Natural speech uses 90%; lower it if speech sounds overprocessed, or use 100% for the previous maximum RNNoise suppression. A lower strength also lets through more keyboard/background noise. The original and denoised paths are aligned to the same 20 ms RNNoise delay; this control adds no extra delay. Use **Even speech** for more level control or **Noise removal only** to hear RNNoise without voice shaping. High-pass, automatic volume, compression, and limiting can be disabled independently. Sliders and presets apply while audio is running. Automatic volume settles over several seconds and does not change the Windows or hardware microphone gain. Existing custom tuning is retained; shipped presets are upgraded to the new defaults.
 
-**Singing** preserves held notes and vocal dynamics by starting with speech noise suppression, automatic volume and compression off. It keeps a gentle 40 Hz rumble cut, neutral EQ and the peak limiter. Set a fixed **Input trim** in Settings if needed, and retain headroom for louder notes. Compression can be enabled manually; the preset prepares a gentle 1.5:1 ratio with 25 ms attack and 250 ms release.
+**Noise gate:** on the Voice page, enable **Noise gate** and start with **Gate threshold −45 dBFS**. Type while staying silent and watch the Gate input level and Open/Closed status. Raise the threshold toward −35 dBFS until quiet typing stays below it; lower it toward −55 dBFS if quiet speech or singing is cut. It detects peak level after echo/noise removal and input trim, before automatic gain and output boosts. The raw Mic input meter is measured earlier, so use the Gate input readout for this adjustment. A click above the threshold opens the gate; clicks overlapping your voice also pass. This is a level control rather than keyboard recognition.
+
+The gate opens quickly with 5 ms lookahead to preserve above-threshold onsets, uses a 6 dB lower closing threshold to avoid chatter, and stays open for 150 ms before fading closed over 120 ms. Adjust Gate hold/release in Settings. The lookahead adds 5 ms only while the gate is enabled. Presets leave it off to preserve quiet words and sustained singing; enable it after selecting a preset. Existing installations retain their sound until they opt in. Preview playback corrects its added delay for the A/B comparison.
+
+In **Classic**, **Singing** preserves held notes and vocal dynamics by starting with speech noise suppression, automatic volume and compression off. It keeps a gentle 40 Hz rumble cut, neutral EQ and the peak limiter. Set a fixed **Input trim** in Settings if needed, and retain headroom for louder notes. Compression can be enabled manually; the preset prepares a gentle 1.5:1 ratio with 25 ms attack and 250 ms release.
 
 For a backing track played on this PC, keep **Speaker echo cancellation** on and select the physical speakers playing that track. AEC uses their playback reference to reduce bleed; it is not general music/vocal source separation, and separation is imperfect during simultaneous singing and playback. Music from a phone, external instrument, or another uncaptured source may still enter the microphone. With noise removal off, room/background noise is retained; enabling RNNoise may damage held notes or quiet singing because it is designed for speech. With headphones, AEC can be off as well, giving the Singing preset only the limiter's 2 ms DSP lookahead plus device buffers.
 
-The limiter protects digital output peaks; it is not an oversampled intersample true-peak limiter. A microphone that clips before software processing needs lower hardware gain. No gate is added, so quiet word beginnings are not deliberately cut by another threshold stage.
+The limiter protects digital output peaks; it is not an oversampled intersample true-peak limiter. A microphone that clips before software processing needs lower hardware gain. The optional gate can attenuate words or notes below its threshold; leave it off for maximum low-level detail.
 
 On the Voice page, **Record 5 seconds** captures only after pressing the button. Compare **Original** and **Processed** on the playback device selected in Settings. Replaying Processed uses the current settings. **Match comparison volume** adjusts Original playback to the processed speech level, subject to a peak ceiling and 18 dB gain cap; switch it off to hear the microphone's actual input level. It does not alter saved recordings or the live microphone. With echo cancellation enabled, the preview also captures a speaker reference that stays in memory; the saved files contain only original/processed microphone audio. Record a new preview if enabling AEC after an ordinary preview. Stop live routing before preview recording. Short preview recordings and settings stay under `%LOCALAPPDATA%\ClearMic`; live audio is never saved. Open that folder from Settings to inspect or delete previews.
 
 ## Latency and performance
 
-All processing is native CPU code using AVX2. RNNoise processes 480-sample / 10 ms frames. The peak limiter adds exactly 96 samples / 2 ms of lookahead. Optional AEC3 adds approximately 430 samples / 9 ms of measured impulse delay at 48 kHz in this build. RNNoise's own framing and Windows/virtual-driver buffering add further delay. Actual end-to-end delay depends on the devices and receiving application; filter-call processing time is not the full microphone latency.
+The audio path runs on the CPU. Classic DSP uses native AVX2 code; Full-band cleanup uses ONNX Runtime and a streaming NumPy FFT adapter. RNNoise processes 480-sample / 10 ms frames. The peak limiter adds exactly 96 samples / 2 ms of lookahead. Optional AEC3 adds approximately 430 samples / 9 ms of measured impulse delay at 48 kHz in this build. RNNoise's own framing and Windows/virtual-driver buffering add further delay. Actual end-to-end delay depends on the devices and receiving application; filter-call processing time is not the full microphone latency.
 
 Setup saves a conservative 3072-sample current VB-CABLE buffer when its control interface is available. Otherwise it reports that the microphone is created with the driver's current defaults. That number is a driver setting, not a measurement of total latency. On the development PC, shared-WASAPI synthetic loopback measured approximately **110–145 ms** across runs, including Windows stream buffering. A live FIFINE → RNNoise → virtual device check ran without audio warnings, with about **0.5 ms** average processing per frame. These measurements do not include a receiving game's buffering or network delay. Use **Driver controls** in Settings if an application needs a larger buffer; consult the bundled vendor manual before reducing it.
 
-The new full chain with AEC ran at approximately 0.5–0.7 ms per 10 ms frame on the development Ryzen 7600X, with zero audio warnings during live routing. Synthetic stereo echo attenuation was approximately 35 dB after convergence. These measurements do not prove superiority to Discord or predict every room. [Research decisions and test limitations](RESEARCH.md) explain the implementation and evaluation.
+The earlier Classic chain with AEC ran at approximately 0.5–0.7 ms per 10 ms frame on the development Ryzen 7600X, with zero audio warnings during live routing. Synthetic stereo echo attenuation was approximately 35 dB after convergence. These measurements do not prove superiority to Discord or predict every room. [Research decisions and test limitations](RESEARCH.md) explain the implementation and evaluation.
 
 Meters report input/output sample peaks, effective automatic gain, compressor/limiter reduction, processing time, warnings and input clipping. Speaker reference status is visible; dropped reference packets and discontinuities are available in backend diagnostics. Device names are resolved against the current WASAPI inventory. Windows COM is initialized on audio threads. No exclusive-mode capture is used. If the owned cable's stereo feed rejects playback, Clear Mic can use the compatible 16-channel feed of that same cable without changing the microphone selected in your game.
 
@@ -74,6 +97,10 @@ python -m venv .venv
 .venv\Scripts\python.exe scripts\fetch_webrtc.py
 scripts\build_webrtc.cmd
 scripts\build_native.cmd
+.venv\Scripts\python.exe scripts\fetch_fullband.py
+# Optional legacy-model regression fixtures:
+.venv\Scripts\python.exe scripts\fetch_neural.py
+scripts\build_neural.cmd
 .venv\Scripts\python.exe scripts\fetch_vbcable.py
 scripts\build_device_setup.cmd
 .venv\Scripts\python.exe -m unittest discover -s tests -v
@@ -101,6 +128,6 @@ Results are written to the app data folder's `self-test.json`. Tests cover high-
 
 ## Licensing
 
-Application source: MIT. RNNoise and its model source use the upstream BSD-style notices retained in `THIRD_PARTY/RNNoise-COPYING`. WebRTC component licenses, patent grant and supplemental FFT/JsonCpp notices are retained in `THIRD_PARTY`. VB-CABLE has separate proprietary donationware terms, documented in `THIRD_PARTY/VB-CABLE-NOTICE.md`, the unchanged vendor package, and the vendor's current licensing page. Electron/Chromium, Python, NumPy, sounddevice/PortAudio, soundfile/libsndfile, and Pillow retain their own licenses. Distribution notices are included with the app.
+Application source: MIT. DPDFNet code and model use Apache-2.0; pinned model provenance is in `fullband.lock.json` and `THIRD_PARTY/DPDFNet`. ONNX Runtime uses MIT. The source tree retains optional legacy LocalVQE/GGML regression tools and their Apache-2.0/MIT notices; their 16 kHz models are no longer bundled in the app. RNNoise and its model source use the upstream BSD-style notices retained in `THIRD_PARTY/RNNoise-COPYING`. WebRTC component licenses, patent grant and supplemental FFT/JsonCpp notices are retained in `THIRD_PARTY`. VB-CABLE has separate proprietary donationware terms, documented in `THIRD_PARTY/VB-CABLE-NOTICE.md`, the unchanged vendor package, and the vendor's current licensing page. Electron/Chromium, Python, NumPy, sounddevice/PortAudio, soundfile/libsndfile, and Pillow retain their own licenses. Distribution notices are included with the app.
 
 Built around [Xiph RNNoise](https://github.com/xiph/rnnoise) and [python-sounddevice](https://python-sounddevice.readthedocs.io/).

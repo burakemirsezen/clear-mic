@@ -1,0 +1,9 @@
+{
+  "repository": "https://github.com/localai-org/LocalVQE.git",
+  "commit": "7f61cd05095d42e56a135b303f5bb4d761da22b9",
+  "ggml_commit": "c044a8eeae2591faa0950c8b5e514cbc4bbfc4ca",
+  "models": {
+    "localvqe-v1.3-4.8M-f32.gguf": "c4f7912485c32cfc206c536f2f050b52513f2f613fdbc616391f6b26ab1d51ec",
+    "localvqe-v1.4-aec-200K-f32.gguf": "b6e43138588a83bfe903ab5e143b4020b91c1e1629f5a575ac5855ff0003c731"
+  }
+}

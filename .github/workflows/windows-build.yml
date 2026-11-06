@@ -24,6 +24,10 @@ jobs:
         shell: cmd
       - run: scripts\build_native.cmd
         shell: cmd
+      - run: python scripts/fetch_neural.py
+      - run: python scripts/fetch_fullband.py
+      - run: scripts\build_neural.cmd
+        shell: cmd
       - run: python scripts/fetch_vbcable.py
       - run: python scripts/verify_driver.py
       - run: scripts\build_device_setup.cmd

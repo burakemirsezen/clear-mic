@@ -1,0 +1,5 @@
+https://github.com/ceva-ip/DPDFNet
+Python streaming algorithm: dpdfnet 0.6.0 (Apache-2.0); adapted to fixed 480-sample buffers, pre-warmed ORT, 50 ms aligned dry blend and existing stereo AEC.
+Model: https://huggingface.co/Ceva-IP/DPDFNet
+Revision dd6818d00f50c836fed43a6243ebe49116de5964
+SHA256 7f0575a5cec0ba4ffd8f8bd657e06d007e4ccdd955d76faab922b9d3291dc14b

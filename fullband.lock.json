@@ -1,0 +1,10 @@
+{
+  "repository": "Ceva-IP/DPDFNet",
+  "revision": "dd6818d00f50c836fed43a6243ebe49116de5964",
+  "model": "dpdfnet2_48khz_hr.onnx",
+  "sha256": "7f0575a5cec0ba4ffd8f8bd657e06d007e4ccdd955d76faab922b9d3291dc14b",
+  "runtime": "onnxruntime==1.31.1",
+  "sample_rate": 48000,
+  "frame_samples": 480,
+  "measured_delay_samples": 2400
+}

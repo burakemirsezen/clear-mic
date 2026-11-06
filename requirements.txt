@@ -5,3 +5,7 @@ pillow==12.3.0
 cffi==2.1.1
 pycparser==3.11
 typing_extensions==4.16.0
+onnxruntime==1.31.1
+flatbuffers==25.12.19
+protobuf==7.36.2
+packaging==26.3
