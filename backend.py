@@ -54,10 +54,13 @@ class Backend:
             self.settings['output']=own_output;self.settings['created_device_selected']=True
         if not self.settings['output']:self.settings['output']=next((n for n in outputs if 'Steam Streaming Microphone' in n),next((n for n in outputs if any(w in n.lower() for w in ('cable','voicemeeter','virtual'))),''))
         physical=[n for n in outputs if physical_speaker(n)]
-        if not self.settings['listen']:
+        # An unplugged physical device stays selected until reconnected, but a
+        # virtual cable can never play a preview or provide a speaker reference
+        # (older versions could save one), so replace it like an empty choice.
+        if not physical_speaker(self.settings['listen']):
             default=next((a['default_output_device'] for a in sd.query_hostapis() if a['name']=='Windows WASAPI'),-1)
             self.settings['listen']=next((n for n,i in self.inventory['output'] if i==default and n in physical),physical[0] if physical else '')
-        if not self.settings['speakers']:self.settings['speakers']=self.settings['listen'] if self.settings['listen'] in physical else (physical[0] if physical else '')
+        if not physical_speaker(self.settings['speakers']):self.settings['speakers']=self.settings['listen'] if self.settings['listen'] in physical else (physical[0] if physical else '')
         return self.snapshot()
     def snapshot(self):
         return {'settings':self.settings,'devices':{k:[n for n,i in v] for k,v in self.inventory.items()},'presets':{k:asdict(v) for k,v in PRESETS.items()},'preview_ready':self.preview is not None,'preview_info':self.preview_info,'notice':self.notice}

@@ -47,6 +47,18 @@ class DeviceRecoveryTests(unittest.TestCase):
         self.assertTrue(self.create({},{'input':[('USB mic',1)],'output':[('Headphones',9)]}).settings['echo_cancel'])
         self.assertFalse(self.create({},{'input':[('USB mic',1)],'output':[('CABLE Input',9)]}).settings['echo_cancel'])
 
+    def test_saved_virtual_preview_device_is_replaced_with_physical_default(self):
+        # Older versions could save a virtual cable for preview playback, which
+        # left Play permanently disabled with a misleading "reconnect" message.
+        inventory={'input':[('USB mic',1)],'output':[('CABLE Input',4),('Speakers (Focusrite USB Audio)',9),('Monitor',10)]}
+        stored={'input':'USB mic','output':'CABLE Input','listen':'CABLE Input','speakers':'CABLE Input','echo_v2':True}
+        service=self.create(stored,inventory,default=9)
+        self.assertEqual(service.settings['listen'],'Speakers (Focusrite USB Audio)')
+        self.assertEqual(service.settings['speakers'],'Speakers (Focusrite USB Audio)')
+        # Unplugged physical choices are still preserved.
+        service=self.create({**stored,'listen':'Headphones','speakers':'Headphones'},inventory,default=9)
+        self.assertEqual(service.settings['listen'],'Headphones');self.assertEqual(service.settings['speakers'],'Headphones')
+
     def test_first_run_with_only_virtual_endpoints_leaves_physical_choices_empty(self):
         inventory={'input':[('VoiceMeeter Output',0)],'output':[('CABLE Input',9)]}
         service=self.create({},inventory)
