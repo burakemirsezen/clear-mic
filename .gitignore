@@ -17,3 +17,4 @@ __pycache__/
 *.spec
 node_modules/
 desktop/.test/
+dist-*/
