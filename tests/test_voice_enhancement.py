@@ -153,6 +153,22 @@ class EnhancementTests(unittest.TestCase):
         with patch('clear_mic.audio_service.sd.query_devices',return_value={'max_output_channels':2}),patch('clear_mic.audio_service.sd.Stream',side_effect=[sd.PortAudioError('Unavailable'), 'stream']),patch('clear_mic.audio_service.resolve',return_value=23):
             stream,note=open_route(28,24,None,'Speakers (Clear Mic (VB-Audio Virtual Cable))')
             self.assertEqual(stream,'stream');self.assertIn('compatible',note)
+    def test_low_latency_route_falls_back_from_exclusive_to_shared(self):
+        class Stream:
+            def __init__(self,**kw):self.settings=kw['extra_settings']
+        modes=lambda s:tuple(bool(x._streaminfo.flags&1) for x in s.settings)  # paWinWasapiExclusive
+        opened=[]
+        def create(**kw):
+            opened.append(Stream(**kw))
+            if len(opened)<3:raise sd.PortAudioError('Device in use')  # mic busy, then exclusive output refused
+            return opened[-1]
+        with patch('clear_mic.audio_service.sd.query_devices',return_value={'max_output_channels':2}),patch('clear_mic.audio_service.sd.Stream',side_effect=create):
+            stream,note=open_route(28,24,None,'CABLE Input',exclusive=True)
+        self.assertEqual([modes(s) for s in opened],[(True,True),(False,True),(False,False)])
+        self.assertEqual(stream.exclusive_mode,(False,False))
+        with patch('clear_mic.audio_service.sd.query_devices',return_value={'max_output_channels':2}),patch('clear_mic.audio_service.sd.Stream',side_effect=lambda **kw:Stream(**kw)):
+            self.assertEqual(open_route(28,24,None,'CABLE Input',exclusive=True)[0].exclusive_mode,(True,True))
+            self.assertEqual(modes(open_route(28,24,None,'CABLE Input')[0]),(False,False))
     def test_foreign_route_is_not_replaced_after_failure(self):
         with patch('clear_mic.audio_service.sd.query_devices',return_value={'max_output_channels':2}),patch('clear_mic.audio_service.sd.Stream',side_effect=sd.PortAudioError('Unavailable')),patch('clear_mic.audio_service.resolve') as resolve:
             with self.assertRaises(sd.PortAudioError):open_route(28,24,None,'CABLE Input')

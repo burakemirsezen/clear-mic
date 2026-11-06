@@ -35,6 +35,13 @@ $('source-link').onclick=()=>{appAction('source').catch(()=>{});};
 $('driver-info').onclick=()=>{appAction('driver-info').catch(()=>{});};
 $('driver-license').onclick=()=>{appAction('driver-license').catch(()=>{});};
 $('driver-controls').onclick=()=>{appAction('driver-controls').catch(()=>{});};
+$('buffer-size').onchange=async()=>{
+  const samples=Number($('buffer-size').value);
+  state.settingUp=true;updateDriver();footer('Windows will request administrator permission to change the virtual microphone buffer.');
+  try{state.driver=await appAction('set-buffer',samples);footer(`Virtual microphone buffer set to ${samples} samples.`);}
+  catch{}
+  finally{state.settingUp=false;updateDriver();updateStatus();}
+};
 function updateDriver() {
   const driver=state.driver||{}, endpoints=driver.endpoints||[];
   const available=driver.installed&&endpoints.some(e=>e.flow==='input')&&endpoints.some(e=>e.flow==='output');
@@ -43,6 +50,8 @@ function updateDriver() {
   $('create-device').disabled=Boolean(driver.foreign_vbcable||state.settingUp);
   $('remove-device').disabled=Boolean(!driver.installed||state.settingUp);
   $('driver-controls').disabled=Boolean(!driver.installed||!driver.buffer_samples||state.settingUp);
+  $('buffer-size').disabled=Boolean(!driver.installed||!driver.buffer_samples||state.settingUp);
+  if(driver.buffer_samples)$('buffer-size').value=String(driver.buffer_samples);
   $('check-driver').disabled=Boolean(state.settingUp);
   $('driver-detail').textContent=driver.buffer_samples?`Driver buffer: ${driver.buffer_samples} samples. Total delay also includes Windows and your receiving app.`:available?'Microphone ready. Restart Windows to enable the optional driver buffer controls.':'Powered by VB-Audio’s signed VB-CABLE driver.';
   $('create-device').textContent=state.settingUp?'Creating device…':driver.installed?'Repair microphone':'Create microphone';
@@ -157,13 +166,14 @@ function renderSettings() {
   $('echo-mode').value=state.settings.echo_mode||'natural';
   $('voice-engine').value=state.settings.engine||'classic';
   $('preview-match').checked=Boolean(state.settings.preview_match);
+  $('low-latency').checked=state.settings.low_latency!==false;
   for(const definition of sliderDefinitions)updateSlider(definition[0]);
   $('auto-start').checked=state.settings.auto_start;$('minimize-tray').checked=state.settings.minimize_to_tray;
   updatePresets();updateChain();pairedName();
 }
 for(const [id,key] of [['input-device','input'],['output-device','output'],['listen-device','listen'],['speaker-device','speakers'],['echo-mode','echo_mode']])$(id).onchange=()=>{state.settings[key]=$(id).value;pairedName();updateStatus();saveSettings().catch(()=>{});};
 $('voice-engine').onchange=()=>{state.settings.engine=$('voice-engine').value;updateSlider('noise_strength');updatePresets();updateChain();updateStatus();saveSettings().catch(()=>{});};
-for(const [id,key] of [['auto-start','auto_start'],['minimize-tray','minimize_to_tray'],['echo-cancel','echo_cancel'],['preview-match','preview_match']])$(id).onchange=()=>{state.settings[key]=$(id).checked;updateStatus();saveSettings().catch(()=>{});};
+for(const [id,key] of [['auto-start','auto_start'],['minimize-tray','minimize_to_tray'],['echo-cancel','echo_cancel'],['preview-match','preview_match'],['low-latency','low_latency']])$(id).onchange=()=>{state.settings[key]=$(id).checked;updateStatus();saveSettings().catch(()=>{});};
 $('launch-login').onchange=async()=>{try{$('launch-login').checked=await appAction('login',$('launch-login').checked);}catch{$('launch-login').checked=!$('launch-login').checked;}};
 $('refresh').onclick=async()=>{try{await saveSettings();const data=await call('refresh');state.settings=data.settings;state.devices=data.devices;renderSettings();footer('Devices refreshed.');}catch{}};
 $('toggle-mic').onclick=async()=>{
@@ -189,6 +199,12 @@ function updateStatus() {
   $('toggle-mic').disabled=!state.ready||state.recording||commandBusy||state.settingUp||(!active&&Boolean(routeProblem()));
   $('input-device').disabled=$('output-device').disabled=active||state.recording||state.settingUp;
   $('speaker-device').disabled=$('echo-cancel').disabled=active||state.recording||state.settingUp;
+  $('low-latency').disabled=active||state.recording||state.settingUp;
+  $('low-latency-detail').textContent=active&&state.settings.low_latency!==false&&stats.status==='running'
+    ?(stats.exclusive_input&&stats.exclusive_output?'Active: microphone and virtual mic are both exclusive.'
+      :stats.exclusive_output?'Partly active: another app is using your microphone, so it stays shared. The virtual mic is exclusive.'
+      :'Unavailable right now: Windows refused exclusive access, so Clear Mic is using shared mode.')
+    :'Opens your microphone and the virtual mic exclusively, skipping Windows mixing. Other apps cannot record this microphone while Clear Mic is on.';
   $('echo-mode').disabled=active||state.recording||state.settingUp||!state.settings.echo_cancel;
   $('voice-engine').disabled=active||state.recording||state.settingUp||!state.ready;
   $('echo-mode-description').textContent=state.settings.echo_mode==='strong'?'Stronger echo suppression can muffle your voice during playback. Try Natural voice if it sounds robotic.':'Keeps more voice detail during playback. Some extra speaker bleed may remain, especially at high volume.';

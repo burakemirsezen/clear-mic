@@ -93,6 +93,13 @@ ipcMain.handle('app:action', async (event, action, value) => {
   }
   if (action === 'device-status') return virtualDevice.status();
   if (action === 'driver-controls') return virtualDevice.controls();
+  if (action === 'set-buffer') {
+    // The driver resizes its ring buffer; reopen live routing around the change.
+    const wasRunning=lastState==='running';
+    await request('stop');
+    try { return await virtualDevice.setBuffer(Number(value)); }
+    finally { if(wasRunning)await request('start').catch(()=>{}); }
+  }
   if (action === 'remove-device') {
     const answer=await dialog.showMessageBox(window,{type:'question',title:'Remove virtual microphone',message:'Remove the Clear Mic virtual microphone?',detail:'Live routing will stop. Other audio devices and shared driver packages will be kept. You can create the microphone again later.',buttons:['Cancel','Remove microphone'],defaultId:0,cancelId:0});
     if(answer.response!==1)return {cancelled:true};

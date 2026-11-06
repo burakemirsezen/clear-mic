@@ -36,10 +36,28 @@ def db(value):return max(-60,20*math.log10(max(value,1e-9)))
 def physical_microphone(name):
     return bool(name) and not any(word in name.lower() for word in ('streaming','cable','voicemeeter','virtual','clear mic'))
 
-def open_route(inp,out,callback,output_name):
+# (exclusive microphone, exclusive virtual output) attempts, fastest first.
+# Shared-mode WASAPI adds the Windows mixer's buffering on each side; measured on
+# the Clear Mic cable, exclusive output cut round-trip delay from ~118 to ~85 ms
+# and exclusive on both ends to ~60 ms. Exclusive input fails while another app
+# records the same microphone, so each step falls back to shared mode.
+EXCLUSIVE_ATTEMPTS=((True,True),(False,True),(False,False))
+
+def _wasapi(exclusive):
+    return sd.WasapiSettings(exclusive=True) if exclusive else sd.WasapiSettings(auto_convert=True)
+
+def open_route(inp,out,callback,output_name,exclusive=False):
     def create(index):
         channels=min(2,sd.query_devices(index)['max_output_channels'])
-        return sd.Stream(device=(inp,index),samplerate=RATE,blocksize=FRAME,channels=(1,channels),dtype='float32',latency='low',extra_settings=(sd.WasapiSettings(auto_convert=True),sd.WasapiSettings(auto_convert=True)),callback=callback)
+        attempts=EXCLUSIVE_ATTEMPTS if exclusive else ((False,False),)
+        for i,(ex_in,ex_out) in enumerate(attempts):
+            try:
+                stream=sd.Stream(device=(inp,index),samplerate=RATE,blocksize=FRAME,channels=(1,channels),dtype='float32',latency='low',extra_settings=(_wasapi(ex_in),_wasapi(ex_out)),callback=callback)
+                try:stream.exclusive_mode=(ex_in,ex_out)
+                except AttributeError:pass  # test doubles
+                return stream
+            except sd.PortAudioError:
+                if i==len(attempts)-1:raise
     try:return create(out),''
     except sd.PortAudioError:
         # Some VB-CABLE endpoint configurations reject the stereo playback client
@@ -57,19 +75,19 @@ class AudioService:
     def active(self):return bool(self.thread and self.thread.is_alive())
     def configure(self,voice):
         self.version+=1;self.pending=(self.version,voice_from(asdict(voice)))
-    def start(self,input_name,output_name,voice,speaker_name=None,preserve_voice=True,engine='classic'):
+    def start(self,input_name,output_name,voice,speaker_name=None,preserve_voice=True,engine='classic',exclusive=False):
         if self.active:return
         if engine not in ('classic','fullband','neural_clean','neural_echo'):raise ValueError('Unknown audio engine')
         if not physical_microphone(input_name):raise ValueError('Choose your physical microphone as input to prevent a feedback loop.')
         if not any(word in output_name.lower() for word in ('streaming microphone','cable','voicemeeter','virtual','clear mic feed')):raise ValueError('Choose a virtual playback endpoint as output. Preview listening uses a separate device.')
         if speaker_name is not None and not physical_speaker(speaker_name):raise ValueError('Select the physical speakers you hear for echo cancellation.')
         self.configure(voice);self.stop_event.clear();self.stats={'status':'starting'}
-        self.thread=threading.Thread(target=self._run,args=(input_name,output_name,speaker_name,preserve_voice,engine),daemon=True);self.thread.start()
+        self.thread=threading.Thread(target=self._run,args=(input_name,output_name,speaker_name,preserve_voice,engine,exclusive),daemon=True);self.thread.start()
     def stop(self):
         self.stop_event.set()
         if self.thread:self.thread.join(timeout=5)
         if self.active:raise RuntimeError('The audio driver has not stopped yet. Please wait before restarting.')
-    def _run(self,input_name,output_name,speaker_name,preserve_voice=True,engine='classic'):
+    def _run(self,input_name,output_name,speaker_name,preserve_voice=True,engine='classic',exclusive=False):
         processor=None;reference=None;echo=None
         try:
             with com_apartment():
@@ -82,7 +100,7 @@ class AudioService:
                 elif reference is not None:echo=EchoCanceller(preserve_voice)
                 echo_result=np.empty(FRAME,np.float32)
                 result=np.empty(FRAME,np.float32);frames=0;warnings=0;sum_ms=0;max_ms=0;clipped=0;deadline_misses=0;error=[]
-                routing_note=''
+                routing_note='';exclusive_mode=(False,False)
                 def callback(indata,outdata,count,timing,status):
                     nonlocal applied,frames,warnings,sum_ms,max_ms,clipped,deadline_misses
                     try:
@@ -104,7 +122,7 @@ class AudioService:
                         levels=processor.process(signal,result)
                         outdata[:]=result[:,None];frames+=1;clipped+=raw_clips
                         stats={'status':'running','input_db':db(raw_peak),'output_db':db(float(levels[1])),'compressor_gr':float(levels[2]),'limiter_gr':float(levels[3]),'automatic_gain_db':float(levels[5]),'frames':frames,'warnings':warnings,'clipped_samples':clipped,'reference_active':reference_peak>0,'reference_db':db(reference_peak),'reference_drops':int(reference.counters[0]) if reference else 0,'reference_discontinuities':int(reference.counters[1]) if reference else 0,'echo_delay_ms':float(echo.metrics[1]) if echo else 0}
-                        stats['routing_note']=routing_note
+                        stats['routing_note']=routing_note;stats['exclusive_input'],stats['exclusive_output']=exclusive_mode
                         stats['echo_processing']=bool(echo is not None and echo.metrics[2]>0)
                         stats['gate_input_db']=db(float(levels[7]));stats['gate_reduction_db']=float(levels[8])
                         stats['engine']=engine;stats['echo_enabled']=reference is not None
@@ -115,7 +133,8 @@ class AudioService:
                         stats.update(mean_ms=sum_ms/frames,max_ms=max_ms,processing_deadline_misses=deadline_misses)
                         self.stats=stats
                     except Exception as e:outdata.fill(0);error.append(str(e));raise sd.CallbackAbort
-                stream,routing_note=open_route(inp,out,callback,output_name)
+                stream,routing_note=open_route(inp,out,callback,output_name,exclusive)
+                exclusive_mode=getattr(stream,'exclusive_mode',(False,False))
                 with stream:
                     while stream.active and not self.stop_event.wait(.1):
                         if error:break

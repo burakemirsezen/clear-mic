@@ -17,7 +17,7 @@ class AudioTimingTests(unittest.TestCase):
             def process_live(self,mic,reference,out):out[:]=mic;return 0
             def configure(self,*args):pass
             def close(self):pass
-        def open_stream(inp,out,callback,name):
+        def open_stream(inp,out,callback,name,exclusive=False):
             class Stream:
                 active=False
                 def __enter__(self):

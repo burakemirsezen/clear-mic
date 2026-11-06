@@ -23,6 +23,7 @@ class Backend:
         self.settings['created_device_selected']=bool(stored.get('created_device_selected',False))
         self.settings['echo_cancel']=bool(stored.get('echo_cancel',False));self.settings['speakers']=stored.get('speakers','')
         self.settings['preview_match']=bool(stored.get('preview_match',True))
+        self.settings['low_latency']=bool(stored.get('low_latency',True))
         self.settings['echo_mode']=stored.get('echo_mode','natural') if stored.get('echo_mode') in ('natural','strong') else 'natural'
         previous_engine=stored.get('engine')
         self.settings['engine']='classic' if previous_engine=='classic' else 'fullband'
@@ -71,18 +72,18 @@ class Backend:
             if key in value:
                 if not isinstance(value[key],str):raise ValueError('Invalid device or preset')
                 result[key]=value[key]
-        for key in ('auto_start','minimize_to_tray','echo_cancel','preview_match'):
+        for key in ('auto_start','minimize_to_tray','echo_cancel','preview_match','low_latency'):
             if key in value:result[key]=bool(value[key])
         if result['echo_mode'] not in ('natural','strong'):raise ValueError('Choose Natural voice or Strong isolation for echo cancellation.')
         if result['engine'] not in ('classic','fullband'):raise ValueError('Choose a supported audio engine.')
-        if (self.service.active or self.busy) and any(result[k]!=self.settings[k] for k in ('input','output','speakers','echo_cancel','echo_mode','engine')):raise ValueError('Stop the microphone or finish recording before changing routing, audio engine or speaker echo cancellation.')
+        if (self.service.active or self.busy) and any(result[k]!=self.settings[k] for k in ('input','output','speakers','echo_cancel','echo_mode','engine','low_latency')):raise ValueError('Stop the microphone or finish recording before changing routing, audio engine, low-latency mode or speaker echo cancellation.')
         if result['echo_cancel'] and not physical_speaker(result['speakers']):raise ValueError('Choose your physical speakers for echo cancellation.')
         if 'voice' in value:result['voice']=asdict(voice_from(value['voice']))
         save(result);self.settings=result;self.service.configure(voice_from(result['voice']))
         return self.settings
     def start(self):
         if self.busy:raise ValueError('Wait for the preview recording to finish.')
-        sd.stop();self.service.start(self.settings['input'],self.settings['output'],voice_from(self.settings['voice']),self.settings['speakers'] if self.settings['echo_cancel'] else None,self.settings['echo_mode']=='natural',self.settings['engine'])
+        sd.stop();self.service.start(self.settings['input'],self.settings['output'],voice_from(self.settings['voice']),self.settings['speakers'] if self.settings['echo_cancel'] else None,self.settings['echo_mode']=='natural',self.settings['engine'],self.settings['low_latency'])
     def record(self):
         if self.service.active or self.busy:raise ValueError('Stop the live microphone before recording a preview.')
         sd.stop();self.busy=True;self.record_until=time.monotonic()+5

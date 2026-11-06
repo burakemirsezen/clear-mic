@@ -153,10 +153,12 @@ int wmain(int argc,wchar_t** argv){
             for(int i=0;i<50;i++){if(endpoints().size()>=2)break;Sleep(200);}
             std::string warning;
             try{restoreDefaults(previous);}catch(const std::exception&){warning="The microphone was created, but Windows audio defaults could not be restored. Check the default playback and recording devices in Windows Settings.";}
-            if(!reboot){try{setBuffer(3072,true);}catch(const std::exception&){if(warning.empty())warning="The microphone was created. Driver buffering will use its current defaults until Windows can open the buffer control interface.";}}
+            if(!reboot){try{setBuffer(1536,true);}catch(const std::exception&){if(warning.empty())warning="The microphone was created. Driver buffering will use its current defaults until Windows can open the buffer control interface.";}}
             result=status(reboot);
             if(!warning.empty()){result.pop_back();result+=",\"warning\":"+json(std::wstring(warning.begin(),warning.end()))+"}";}
         }else if(action==L"--remove"){result=status(remove());}
+        // Driver-supported sizes only: 1536 (32 ms, default), 2048, 3072, 7168.
+        else if(action==L"--set-buffer"){if(argc<3)throw std::runtime_error("Buffer size required");setBuffer((DWORD)std::wcstoul(argv[2],nullptr,10),true);result=status();}
         else if(action==L"--verify"){if(argc<3)throw std::runtime_error("Driver package path required");verify(argv[2]);result="{\"package_verified\":true}";}
         else if(action==L"--inspect"){endpoints(true);result=status();}
         else if(action==L"--status")result=status();
